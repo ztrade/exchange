@@ -104,6 +104,7 @@ func (b *BinanceTrade) fetchBalanceAndPosition() (err error) {
 	if err != nil {
 		return
 	}
+
 	var balance Balance
 	balance.Balance = parseFloat(account.TotalWalletBalance)
 	balance.Available = parseFloat(account.TotalCrossWalletBalance)
@@ -340,7 +341,7 @@ func (b *BinanceTrade) Watch(param exchange.WatchParam, fn exchange.WatchFn) (er
 			close(finishC)
 		}()
 	case exchange.WatchTypeDepth:
-		_, stopC, err = bfutures.WsPartialDepthServe(symbol, 10, b.handleDepth(fn), b.handleError("depth", b.retry(param, fn)))
+		_, stopC, err = bfutures.WsPartialDepthServeWithRate(symbol, 10, 100*time.Millisecond, b.handleDepth(fn), b.handleError("depth", b.retry(param, fn)))
 	case exchange.WatchTypeTradeMarket:
 		_, stopC, err = bfutures.WsAggTradeServe(symbol, b.handleAggTradeEvent(fn), b.handleError("aggTrade", b.retry(param, fn)))
 	case exchange.WatchTypeTrade:
