@@ -82,6 +82,7 @@ func NewBinanceTrader(cfg bcommon.BinanceConfig, cltName, clientProxy string) (b
 			return
 		}
 		b.api.HTTPClient = &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+
 		websocket.DefaultDialer.Proxy = http.ProxyURL(proxyURL)
 		websocket.DefaultDialer.HandshakeTimeout = time.Second * 60
 	}
@@ -92,7 +93,7 @@ func NewBinanceTrader(cfg bcommon.BinanceConfig, cltName, clientProxy string) (b
 	if err != nil {
 		return nil, err
 	}
-	err = b.Start()
+	// err = b.Start()
 	return
 }
 

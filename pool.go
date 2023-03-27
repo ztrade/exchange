@@ -3,6 +3,8 @@ package exchange
 import (
 	"fmt"
 	"sync"
+
+	"github.com/spf13/viper"
 )
 
 var (
@@ -40,4 +42,9 @@ func NewExchange(name string, cfg Config, cltName string) (ex Exchange, err erro
 	}
 	ex, err = fn(cfg, cltName)
 	return
+}
+
+func NewExchangeViper(name, cltName string) (ex Exchange, err error) {
+	cfg := WrapViper(viper.GetViper())
+	return NewExchange(name, cfg, cltName)
 }
