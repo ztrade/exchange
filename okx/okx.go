@@ -265,70 +265,37 @@ func (b *OkxTrader) getAccountConfig() (err error) {
 
 // KlineChan get klines
 func (b *OkxTrader) GetKline(symbol, bSize string, start, end time.Time) (data []*Candle, err error) {
-	fmt.Println("GetKline:", symbol, bSize, start, end)
-	dur, err := time.ParseDuration(bSize)
-	if err != nil {
-		return
-	}
+	// fmt.Println("GetKline:", symbol, bSize, start, end)
 
 	nStart := start.Unix() * 1000
 	nEnd := end.UnixMilli()
 	tempEnd := nEnd
-	var nPrevStart int64
 	var resp *market.GetApiV5MarketHistoryCandlesResponse
 	var startStr, endStr string
-	nDur := int64(dur / time.Millisecond)
-	var klines []*Candle
-	for {
-		tMax := time.Now().Unix()*1000 - nDur
-		ctx, cancel := context.WithTimeout(background, time.Second*3)
-		startStr = strconv.FormatInt(nStart, 10)
-		tempEnd = nStart + 100*60*1000
-		if tempEnd > nEnd {
-			tempEnd = nEnd
-		}
-		endStr = strconv.FormatInt(tempEnd, 10)
-		var params = market.GetApiV5MarketHistoryCandlesParams{InstId: symbol, Bar: &bSize, Before: &startStr, After: &endStr}
-		resp, err = b.marketApi.GetApiV5MarketHistoryCandlesWithResponse(ctx, &params, b.customReq)
-		cancel()
-		if err != nil {
-			return
-		}
-		klines, err = parseCandles(resp)
-		if err != nil {
-			if strings.Contains(err.Error(), "Requests too frequent.") {
-				time.Sleep(time.Second)
-				continue
-			}
-			return
-		}
-		sort.Slice(klines, func(i, j int) bool {
-			return klines[i].Start < klines[j].Start
-		})
 
-		for k, v := range klines {
-			if v.Start*1000 <= nPrevStart {
-				continue
-			}
-			if k == len(klines)-1 {
-				// check if candle is unfinished
-				if v.Start > tMax {
-					log.Infof("skip unfinished candle: %##v\n", *v)
-					break
-				}
-			}
-			data = append(data, v)
-			nStart = v.Start * 1000
-		}
-		if len(klines) == 0 {
-			nStart = tempEnd
-		}
-		if nStart >= nEnd || nStart <= nPrevStart {
-			fmt.Println(time.Unix(nStart/1000, 0), start, end)
-			break
-		}
-		nPrevStart = nStart
+	ctx, cancel := context.WithTimeout(background, time.Second*3)
+	startStr = strconv.FormatInt(nStart, 10)
+	tempEnd = nStart + 100*60*1000
+	if tempEnd > nEnd {
+		tempEnd = nEnd
 	}
+	endStr = strconv.FormatInt(tempEnd, 10)
+	var params = market.GetApiV5MarketHistoryCandlesParams{InstId: symbol, Bar: &bSize, Before: &startStr, After: &endStr}
+	resp, err = b.marketApi.GetApiV5MarketHistoryCandlesWithResponse(ctx, &params, b.customReq)
+	cancel()
+	if err != nil {
+		return
+	}
+	data, err = parseCandles(resp)
+	if err != nil {
+		if strings.Contains(err.Error(), "Requests too frequent.") {
+			err = fmt.Errorf("requests too frequent %w", exchange.ErrRetry)
+		}
+		return
+	}
+	sort.Slice(data, func(i, j int) bool {
+		return data[i].Start < data[j].Start
+	})
 
 	return
 }

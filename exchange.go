@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"errors"
 	"sort"
 	"time"
 
@@ -15,6 +16,10 @@ const (
 	WatchTypeTrade       = "trade"
 	WatchTypePosition    = "position"
 	WatchTypeBalance     = "balance"
+)
+
+var (
+	ErrRetry = errors.New("need retry")
 )
 
 type WatchParam struct {
@@ -78,6 +83,10 @@ func KlineChan(e Exchange, symbol, bSize string, start, end time.Time) (dataCh c
 		for {
 			klines, err := e.GetKline(symbol, bSize, tStart, tEnd)
 			if err != nil {
+				if errors.Is(err, ErrRetry) {
+					time.Sleep(time.Second * 2)
+					continue
+				}
 				errCh <- err
 				return
 			}
