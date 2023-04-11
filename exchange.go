@@ -84,7 +84,7 @@ func KlineChan(e Exchange, symbol, bSize string, start, end time.Time) (dataCh c
 			klines, err := e.GetKline(symbol, bSize, tStart, tEnd)
 			if err != nil {
 				if errors.Is(err, ErrRetry) {
-					time.Sleep(time.Second * 2)
+					time.Sleep(time.Second * 5)
 					continue
 				}
 				errCh <- err

@@ -32,7 +32,7 @@ import (
 var (
 	background = context.Background()
 
-	ApiAddr       = "https://aws.okx.com/"
+	ApiAddr       = "https://www.okx.com/"
 	WSOkexPUbilc  = "wss://wsaws.okx.com:8443/ws/v5/public"
 	WSOkexPrivate = "wss://wsaws.okx.com:8443/ws/v5/private"
 
@@ -104,7 +104,7 @@ func NewOkxTrader(cfg exchange.Config, cltName string) (b *OkxTrader, err error)
 	}
 	b.symbols = make(map[string]Symbol)
 	b.klineLimit = 100
-	b.timeout = time.Second * 5
+	b.timeout = time.Second * 10
 	var okxCfg OkxConfig
 	err = cfg.UnmarshalKey(fmt.Sprintf("exchanges.%s", cltName), &okxCfg)
 	if err != nil {
@@ -143,9 +143,13 @@ func NewOkxTrader(cfg exchange.Config, cltName string) (b *OkxTrader, err error)
 		if err != nil {
 			return
 		}
-		clt := b.marketApi.ClientInterface.(*market.Client).Client.(*http.Client)
+		clt := b.tradeApi.ClientInterface.(*trade.Client).Client.(*http.Client)
 		*clt = http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
-		clt = b.tradeApi.ClientInterface.(*trade.Client).Client.(*http.Client)
+		clt = b.marketApi.ClientInterface.(*market.Client).Client.(*http.Client)
+		*clt = http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+		clt = b.publicApi.ClientInterface.(*public.Client).Client.(*http.Client)
+		*clt = http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+		clt = b.accountApi.ClientInterface.(*account.Client).Client.(*http.Client)
 		*clt = http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
 		websocket.DefaultDialer.Proxy = http.ProxyURL(proxyURL)
 		websocket.DefaultDialer.HandshakeTimeout = time.Second * 60
