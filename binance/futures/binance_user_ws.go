@@ -25,6 +25,7 @@ Out:
 				cancel()
 				if err != nil {
 					log.Error("update listen key failed:", err.Error())
+					time.Sleep(time.Minute)
 					continue
 				}
 				break

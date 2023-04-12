@@ -28,7 +28,7 @@ func getTestClt() *CtpExchange {
 	if err != nil {
 		log.Fatal("create client failed:" + err.Error())
 	}
-	// testClt.Start()
+	testClt.Start()
 	return testClt
 }
 

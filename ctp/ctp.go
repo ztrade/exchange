@@ -228,8 +228,7 @@ func (c *CtpExchange) initTdApi() (err error) {
 	tdApi.RegisterSpi(tdSpi)
 	tdApi.RegisterFront(fmt.Sprintf("tcp://%s", c.cfg.TdServer))
 	tdApi.Init()
-	time.Sleep(time.Second * 10)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*60)
 	defer cancel()
 	log.Info("wait TdApi login")
 	err = tdSpi.WaitSymbols(ctx)
@@ -262,7 +261,7 @@ func (c *CtpExchange) Stop() error {
 func (c *CtpExchange) syncPosition() (err error) {
 	tick := time.NewTicker(time.Second * 10)
 	defer tick.Stop()
-	var resps []*ctp.CThostFtdcInvestorPositionDetailField
+	var resps []*ctp.CThostFtdcInvestorPositionField
 	var balanceResp *ctp.CThostFtdcTradingAccountField
 	for {
 		select {
@@ -272,11 +271,11 @@ func (c *CtpExchange) syncPosition() (err error) {
 			}
 			// log.Info("query positions")
 			ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-			resps, err = util.ReqWithResps[ctp.CThostFtdcInvestorPositionDetailField](ctx, func(id int) error {
-				pQryInvestorPosition := &ctp.CThostFtdcQryInvestorPositionDetailField{}
-				nRet := c.tdApi.ReqQryInvestorPositionDetail(pQryInvestorPosition, id)
+			resps, err = util.ReqWithResps[ctp.CThostFtdcInvestorPositionField](ctx, func(id int) error {
+				pQryInvestorPosition := &ctp.CThostFtdcQryInvestorPositionField{BrokerID: c.cfg.BrokerID, InvestorID: c.cfg.User}
+				nRet := c.tdApi.ReqQryInvestorPosition(pQryInvestorPosition, id)
 				if nRet != 0 {
-					err1 := fmt.Errorf("ReqQryInvestorPositionDetail failed: %d", nRet)
+					err1 := fmt.Errorf("ReqQryInvestorPosition failed: %d", nRet)
 					return err1
 				}
 				return nil
@@ -690,7 +689,7 @@ func (c *CtpExchange) onOrder(p *ctp.CThostFtdcOrderField) {
 }
 
 // [{"InstrumentID":"c2307","BrokerID":"9099","InvestorID":"6126689","HedgeFlag":49,"Direction":48,"OpenDate":"20230410","TradeID":"   103398157","Volume":1,"OpenPrice":2763,"TradingDay":"20230410","SettlementID":1,"TradeType":48,"CombInstrumentID":"","ExchangeID":"DCE","CloseProfitByDate":0,"CloseProfitByTrade":0,"PositionProfitByDate":0,"PositionProfitByTrade":0,"Margin":4973.4,"ExchMargin":3315.6,"MarginRateByMoney":0.18,"MarginRateByVolume":0,"LastSettlementPrice":2713,"SettlementPrice":2763,"CloseVolume":0,"CloseAmount":0,"TimeFirstVolume":1,"InvestUnitID":"","SpecPosiType":35}]
-func (c *CtpExchange) updatePosition(resps []*ctp.CThostFtdcInvestorPositionDetailField) {
+func (c *CtpExchange) updatePosition(resps []*ctp.CThostFtdcInvestorPositionField) {
 	if len(resps) == 0 {
 		log.Warn("updatePosition resp empty")
 		return
@@ -708,15 +707,15 @@ func (c *CtpExchange) updatePosition(resps []*ctp.CThostFtdcInvestorPositionDeta
 		}
 		symbol := formatSymbol(v.ExchangeID, v.InstrumentID)
 		var pos Position
-		pos.Hold = float64(v.Volume)
-		if v.Direction == '1' {
+		pos.Hold = float64(v.Position)
+		if v.PosiDirection == '3' {
 			pos.Hold = 0 - pos.Hold
 		}
 		if pos.Hold == 0 {
 			continue
 		}
 		pos.Symbol = symbol
-		pos.Price = v.OpenPrice
+		pos.Price = v.PositionCost / float64(v.Position)
 		posCache[symbol] = append(posCache[symbol], &pos)
 
 	}
