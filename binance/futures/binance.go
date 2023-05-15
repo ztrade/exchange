@@ -210,6 +210,11 @@ func (b *BinanceTrade) GetKline(symbol, bSize string, start, end time.Time) (dat
 	var temp *Candle
 	ctx, cancel := context.WithTimeout(background, b.timeout)
 	defer cancel()
+	defer func() {
+		if err != nil && strings.Contains(err.Error(), "Too many requests") {
+			err = fmt.Errorf("%w, retry: %s", exchange.ErrRetry, err.Error())
+		}
+	}()
 	// get server time
 	nTime, err := b.timeService.Do(ctx)
 	if err != nil {

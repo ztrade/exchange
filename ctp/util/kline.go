@@ -14,10 +14,12 @@ type CTPKline struct {
 	prevVolume   int64
 	prevTurnover float64
 	cb           func(*trademodel.Candle)
+	bFirst       bool
 }
 
 func NewCTPKline() *CTPKline {
 	k := new(CTPKline)
+	k.bFirst = true
 	return k
 }
 
@@ -29,7 +31,13 @@ func (k *CTPKline) Update(data *ctp.CThostFtdcDepthMarketDataField) (candle *tra
 	defer func() {
 		k.prevTurnover = data.Turnover
 		k.prevVolume = int64(data.Volume)
+
 		if candle != nil && k.cb != nil {
+			// 第一根K线可能不全，所以忽略
+			if k.bFirst {
+				k.bFirst = false
+				return
+			}
 			k.cb(candle)
 		}
 	}()

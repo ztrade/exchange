@@ -100,11 +100,11 @@ func TestSymbols(t *testing.T) {
 }
 
 func TestKline(t *testing.T) {
-	testClt.Watch(exchange.WatchParam{Type: exchange.WatchTypeCandle, Param: map[string]string{"symbol": "DCE.c2307", "bin": "1m"}}, func(value interface{}) {
+	testClt.Watch(exchange.WatchParam{Type: exchange.WatchTypeCandle, Param: map[string]string{"symbol": "SHFE.au2308", "bin": "1m"}}, func(value interface{}) {
 		candle := value.(*Candle)
 		fmt.Println("Candle:", *candle)
 	})
-	time.Sleep(time.Minute * 2)
+	time.Sleep(time.Minute * 5)
 }
 
 func TestGetKline(t *testing.T) {
