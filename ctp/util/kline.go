@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lunny/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/ztrade/ctp"
 	"github.com/ztrade/trademodel"
 )
