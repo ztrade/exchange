@@ -15,7 +15,7 @@ require (
 	github.com/spf13/viper v1.11.0
 	github.com/ztrade/base v0.1.6
 	github.com/ztrade/ctp v0.0.2
-	github.com/ztrade/trademodel v1.1.5
+	github.com/ztrade/trademodel v1.1.6
 	github.com/ztrade/ztrade v0.1.3
 )
 

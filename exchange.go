@@ -101,7 +101,7 @@ func KlineChan(e Exchange, symbol, bSize string, start, end time.Time) (dataCh c
 				tStart = v.Time()
 			}
 			if tStart.Sub(tEnd) >= 0 || tStart.Unix() <= nPrevStart || len(klines) == 0 {
-				logrus.Info("KlineChan finished: [%s]-[%s], last datatime: %s", start, end, tStart)
+				logrus.Infof("KlineChan finished: [%s]-[%s], last datatime: %s", start, end, tStart)
 				break
 			}
 			nPrevStart = tStart.Unix()

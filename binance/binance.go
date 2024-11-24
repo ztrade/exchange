@@ -23,7 +23,7 @@ func NewBinance(cfg exchange.Config, cltName string) (e exchange.Exchange, err e
 	case "futures":
 		e, err = futures.NewBinanceTrader(eCfg, cltName, clientProxy)
 	default:
-		err = fmt.Errorf("binance unsupport kind %s", &eCfg.Kind)
+		err = fmt.Errorf("binance unsupport kind %s", eCfg.Kind)
 	}
 	return
 }
