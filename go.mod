@@ -3,13 +3,13 @@ module github.com/ztrade/exchange
 go 1.20
 
 require (
-	github.com/adshao/go-binance/v2 v2.4.5
+	github.com/adshao/go-binance/v2 v2.6.1
 	github.com/antihax/optional v1.0.0
-	github.com/bitly/go-simplejson v0.5.0
+	github.com/bitly/go-simplejson v0.5.1
 	github.com/deepmap/oapi-codegen v1.10.1
 	github.com/gateio/gateapi-go/v6 v6.26.0
 	github.com/getkin/kin-openapi v0.94.0
-	github.com/gorilla/websocket v1.5.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/viper v1.11.0

@@ -1,5 +1,7 @@
 package common
 
+import "time"
+
 type BinanceConfig struct {
 	Type     string
 	Key      string
@@ -7,4 +9,5 @@ type BinanceConfig struct {
 	IsTest   bool
 	Kind     string
 	Currency string
+	Timeout  time.Duration
 }

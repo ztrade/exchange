@@ -6,6 +6,7 @@ import (
 	"github.com/ztrade/exchange"
 	bcommon "github.com/ztrade/exchange/binance/common"
 	"github.com/ztrade/exchange/binance/futures"
+	"github.com/ztrade/exchange/binance/spot"
 )
 
 func init() {
@@ -22,6 +23,8 @@ func NewBinance(cfg exchange.Config, cltName string) (e exchange.Exchange, err e
 	switch eCfg.Kind {
 	case "futures":
 		e, err = futures.NewBinanceTrader(eCfg, cltName, clientProxy)
+	case "spot":
+		e, err = spot.NewBinanceSpot(eCfg, cltName, clientProxy)
 	default:
 		err = fmt.Errorf("binance unsupport kind %s", eCfg.Kind)
 	}
