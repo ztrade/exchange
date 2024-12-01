@@ -60,8 +60,10 @@ func NewBinanceTrader(cfg bcommon.BinanceConfig, cltName, clientProxy string) (b
 	if cfg.Currency != "" {
 		b.baseCurrency = cfg.Currency
 	}
-
-	b.timeout = time.Second * 5
+	b.timeout = cfg.Timeout
+	if b.timeout == 0 {
+		b.timeout = time.Second * 5
+	}
 	b.closeCh = make(chan bool)
 
 	newLock.Lock()
@@ -448,23 +450,17 @@ func (b *BinanceTrade) ProcessOrder(act TradeAction) (ret *Order, err error) {
 	return
 }
 
-// TODO: cancel stop order
 func (b *BinanceTrade) CancelAllOrders() (orders []*Order, err error) {
 	ctx, cancel := context.WithTimeout(background, b.timeout)
 	defer cancel()
-	ret, err := b.api.NewListOrdersService().Do(ctx)
+	ret, err := b.api.NewListOpenOrdersService().Do(ctx)
 	if err != nil {
 		err = fmt.Errorf("CancelOrder failed with list: %w", err)
 		return
 	}
 	symbolMap := make(map[string]bool)
-	var st string
 	var ok bool
 	for _, v := range ret {
-		st = string(v.Status)
-		if st == OrderStatusFilled || st == OrderStatusCanceled {
-			continue
-		}
 		od := transOrder(v)
 		orders = append(orders, od)
 		_, ok = symbolMap[od.Symbol]
