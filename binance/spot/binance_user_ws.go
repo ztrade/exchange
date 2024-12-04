@@ -2,6 +2,7 @@ package spot
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -70,6 +71,7 @@ func (b *BinanceSpot) handleUserData(event *gobinance.WsUserDataEvent) {
 		var balance Balance
 		for _, v := range event.AccountUpdate.WsAccountUpdates {
 			if v.Asset == b.baseCurrency {
+				balance.Currency = v.Asset
 				balance.Balance = parseFloat(v.Free)
 				balance.Available = parseFloat(v.Free)
 				if b.balanceCb != nil {
@@ -78,6 +80,7 @@ func (b *BinanceSpot) handleUserData(event *gobinance.WsUserDataEvent) {
 				// total = balance.Balance
 			} else {
 				var pos Position
+				pos.Symbol = fmt.Sprintf("%s%s", v.Asset, b.baseCurrency)
 				pos.Hold, _ = strconv.ParseFloat(v.Free, 64)
 				freeze, _ := strconv.ParseFloat(v.Locked, 64)
 				pos.Hold += freeze
