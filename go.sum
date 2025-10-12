@@ -111,6 +111,7 @@ github.com/sagikazarmark/locafero v0.12.0 h1:/NQhBAkUb4+fH1jivKHWusDYFjMOOKU88ee
 github.com/sagikazarmark/locafero v0.12.0/go.mod h1:sZh36u/YSZ918v0Io+U9ogLYQJ9tLLBmM4eneO6WwsI=
 github.com/shopspring/decimal v1.3.1 h1:2Usl1nmF/WZucqkFZhnfFYxxxu8LG21F6nPQBE5gKV8=
 github.com/shopspring/decimal v1.3.1/go.mod h1:DKyhrW/HYNuLGql+MJL6WCR6knT2jwCFRcu2hWCYk4o=
+github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=
@@ -143,6 +144,8 @@ github.com/valyala/fasttemplate v1.2.1/go.mod h1:KHLXt3tVN2HBp8eijSv/kGJopbvo7S+
 github.com/yuin/goldmark v1.4.1/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 github.com/ztrade/base v0.1.6 h1:Fq+xJm1uZAlr0r3j7orOSZ1Ils9M96kVMQkFTaXDUtI=
 github.com/ztrade/base v0.1.6/go.mod h1:ekfMerUheppWuKZ9Uxt0XOetYw5DVb/kw7TtWmAfpN4=
+github.com/ztrade/base v0.2.0 h1:qKexX68gecXO1OL6IzVSsZafUc4LOflUD4jDnjWVgx0=
+github.com/ztrade/base v0.2.0/go.mod h1:2a9AWuyDYeimxl4gV1nm/N875T0Ssy7KhTVZRUlhENg=
 github.com/ztrade/ctp v0.0.2 h1:77K2gPKJRrrWjYaM2xaE6IhOmiIhY2Tx9FgO42s2gPc=
 github.com/ztrade/ctp v0.0.2/go.mod h1:F6mY4Zoyo5kVecAQg08iwni5gIC5ISoFv6a09xZs+NQ=
 github.com/ztrade/trademodel v1.1.6 h1:4TnVtlPY9sk6dIIVNtVK6B46mw8+0x+Nc7h4gBLn7Gk=

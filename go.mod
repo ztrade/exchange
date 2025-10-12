@@ -11,7 +11,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.21.0
-	github.com/ztrade/base v0.1.6
+	github.com/ztrade/base v0.2.0
 	github.com/ztrade/ctp v0.0.2
 	github.com/ztrade/trademodel v1.1.6
 )
@@ -30,7 +30,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
-	github.com/shopspring/decimal v1.3.1 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
