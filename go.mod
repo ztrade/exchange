@@ -11,7 +11,7 @@ require (
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.21.0
-	github.com/ztrade/base v0.2.0
+	github.com/ztrade/base v0.2.1
 	github.com/ztrade/ctp v0.0.2
 	github.com/ztrade/trademodel v1.1.6
 )
