@@ -32,7 +32,7 @@ Out:
 				break
 			}
 			if err != nil {
-				log.Error("update listen key failed 10 times,just exist::", err.Error())
+				log.Error("update listen key failed 10 times, just exit:", err.Error())
 				break Out
 			}
 		}
@@ -97,7 +97,11 @@ func (b *BinanceSpot) handleUserData(event *gobinance.WsUserDataEvent) {
 
 		order.Amount = parseFloat(event.OrderUpdate.Volume)
 		order.Filled = parseFloat(event.OrderUpdate.FilledVolume)
-		order.Price = parseFloat(event.OrderUpdate.FilledQuoteVolume) / order.Filled
+		if order.Filled > 0 {
+			order.Price = parseFloat(event.OrderUpdate.FilledQuoteVolume) / order.Filled
+		} else {
+			order.Price = 0
+		}
 		order.Status = string(event.OrderUpdate.Status)
 		order.Side = string(event.OrderUpdate.Side)
 		order.Time = time.UnixMilli(event.OrderUpdate.TransactionTime)

@@ -3,6 +3,7 @@ package futures
 import (
 	"fmt"
 	"log"
+	"os"
 	"testing"
 	"time"
 
@@ -19,9 +20,9 @@ func getTestClt() *BinanceTrade {
 	cfg := common.BinanceConfig{
 		Type:   "binance",
 		Kind:   "futures",
-		Key:    "1b7e6ff097fd5805f1bd8f27e5ce93d0786edbf2e5094ae7ef42e6afe0f113b3",
-		Secret: "15ce5058f804ebc134800c6df553b14c3758cac6bafc22fc12f462caf0707a0f",
-		IsTest: true,
+		Key:    os.Getenv("BINANCE_API_KEY"),
+		Secret: os.Getenv("BINANCE_API_SECRET"),
+		// IsTest: true,
 	}
 	var err error
 	testClt, err = NewBinanceTrader(cfg, "binance", "")
@@ -34,7 +35,6 @@ func getTestClt() *BinanceTrade {
 
 func TestMain(m *testing.M) {
 	testClt = getTestClt()
-	// testSpotClt = getTestSpotClt()
 	m.Run()
 }
 
@@ -108,12 +108,12 @@ func getLastCandle(symbol string, t *testing.T) *trademodel.Candle {
 }
 
 func TestProcessOrder(t *testing.T) {
-	last := getLastCandle("ETHUSDT", t)
+	//last := getLastCandle("SUIUSDT", t)
 	act := trademodel.TradeAction{
 		Action: trademodel.OpenLong,
-		Amount: 1,
-		Price:  last.Low * 0.9,
-		Symbol: "ETHUSDT",
+		Amount: 5,
+		Price:  3.6,
+		Symbol: "SUIUSDT",
 		Time:   time.Now(),
 	}
 	ret, err := testClt.ProcessOrder(act)
@@ -153,6 +153,16 @@ func TestProcessStopOrder(t *testing.T) {
 
 func TestCancelAllOrders(t *testing.T) {
 	orders, err := testClt.CancelAllOrders()
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	for _, v := range orders {
+		t.Log("cancel:", v)
+	}
+}
+
+func TestTradeList(t *testing.T) {
+	orders, err := testClt.api.NewListAccountTradeService().Do(t.Context())
 	if err != nil {
 		t.Fatal(err.Error())
 	}

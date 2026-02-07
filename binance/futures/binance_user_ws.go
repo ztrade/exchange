@@ -31,7 +31,7 @@ Out:
 				break
 			}
 			if err != nil {
-				log.Error("update listen key failed 10 times,just exist::", err.Error())
+				log.Error("update listen key failed 10 times, just exit:", err.Error())
 				break Out
 			}
 		}

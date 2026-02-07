@@ -111,8 +111,8 @@ func (b *BinanceSpot) fetchBalanceAndPosition() (err error) {
 		locked, _ = strconv.ParseFloat(v.Locked, 64)
 		if strings.EqualFold(v.Asset, b.baseCurrency) {
 			balance.Currency = b.baseCurrency
-			balance.Balance, _ = strconv.ParseFloat(v.Free, 64)
-			balance.Available = balance.Balance + locked
+			balance.Available, _ = strconv.ParseFloat(v.Free, 64)
+			balance.Balance = balance.Available + locked
 			if b.balanceCb != nil {
 				b.balanceCb(&balance)
 			}
@@ -265,7 +265,7 @@ func (b *BinanceSpot) handleAggTradeEvent(fn exchange.WatchFn) func(evt *gobinan
 		}
 		trade.Price, err = strconv.ParseFloat(evt.Price, 64)
 		if err != nil {
-			log.Errorf("AggTradeEvent parse amount failed: %s", evt.Quantity)
+			log.Errorf("AggTradeEvent parse price failed: %s", evt.Price)
 		}
 		trade.Time = time.Unix(evt.Time/1000, (evt.Time%1000)*int64(time.Millisecond))
 		if fn != nil {
@@ -354,7 +354,7 @@ func (b *BinanceSpot) Watch(param exchange.WatchParam, fn exchange.WatchFn) (err
 		b.balanceCb = fn
 		err = b.fetchBalanceAndPosition()
 	default:
-		err = fmt.Errorf("unknown wathc param: %s", param.Type)
+		err = fmt.Errorf("unknown watch param: %s", param.Type)
 	}
 	if err != nil {
 		return
@@ -379,11 +379,11 @@ func (b *BinanceSpot) CancelOrder(old *Order) (order *Order, err error) {
 	}
 	price, err := strconv.ParseFloat(resp.Price, 64)
 	if err != nil {
-		panic(fmt.Sprintf("CancelOrder parse price %s error: %s", resp.Price, err.Error()))
+		log.Errorf("CancelOrder parse price %s error: %s", resp.Price, err.Error())
 	}
 	amount, err := strconv.ParseFloat(resp.OrigQuantity, 64)
 	if err != nil {
-		panic(fmt.Sprintf("CancelOrder parse damount %s error: %s", resp.OrigQuantity, err.Error()))
+		log.Errorf("CancelOrder parse amount %s error: %s", resp.OrigQuantity, err.Error())
 	}
 	order = &Order{
 		OrderID:  strconv.FormatInt(resp.OrderID, 10),
@@ -468,11 +468,11 @@ func (b *BinanceSpot) CancelAllOrders() (orders []*Order, err error) {
 func transSpotOrder(fo *gobinance.Order) (o *Order) {
 	price, err := strconv.ParseFloat(fo.Price, 64)
 	if err != nil {
-		panic(fmt.Sprintf("parse price %s error: %s", fo.Price, err.Error()))
+		log.Errorf("transSpotOrder parse price %s error: %s", fo.Price, err.Error())
 	}
 	amount, err := strconv.ParseFloat(fo.OrigQuantity, 64)
 	if err != nil {
-		panic(fmt.Sprintf("parse damount %s error: %s", fo.OrigQuantity, err.Error()))
+		log.Errorf("transSpotOrder parse amount %s error: %s", fo.OrigQuantity, err.Error())
 	}
 	o = &Order{
 		OrderID:  strconv.FormatInt(fo.OrderID, 10),
@@ -490,11 +490,11 @@ func transSpotOrder(fo *gobinance.Order) (o *Order) {
 func transSpotCreateOrder(fo *gobinance.CreateOrderResponse) (o *Order) {
 	price, err := strconv.ParseFloat(fo.Price, 64)
 	if err != nil {
-		panic(fmt.Sprintf("parse price %s error: %s", fo.Price, err.Error()))
+		log.Errorf("transSpotCreateOrder parse price %s error: %s", fo.Price, err.Error())
 	}
 	amount, err := strconv.ParseFloat(fo.OrigQuantity, 64)
 	if err != nil {
-		panic(fmt.Sprintf("parse damount %s error: %s", fo.OrigQuantity, err.Error()))
+		log.Errorf("transSpotCreateOrder parse amount %s error: %s", fo.OrigQuantity, err.Error())
 	}
 	o = &Order{
 		OrderID:  strconv.FormatInt(fo.OrderID, 10),
@@ -525,9 +525,13 @@ func transCandle(candle *gobinance.Kline) (ret *Candle) {
 }
 
 func parseFloat(str string) float64 {
+	if str == "" {
+		return 0
+	}
 	f, err := strconv.ParseFloat(str, 64)
 	if err != nil {
-		panic("binance parseFloat error:" + err.Error())
+		log.Errorf("binance parseFloat error: %s, input: %s", err.Error(), str)
+		return 0
 	}
 	return f
 }
