@@ -41,7 +41,7 @@ type FetchLimit struct {
 	Limit    int
 }
 
-// ExxchangeInfo exchange info
+// ExchangeInfo exchange info
 type ExchangeInfo struct {
 	Name       string
 	Value      string

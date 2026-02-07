@@ -8,7 +8,8 @@ import (
 )
 
 var (
-	exchangeFactory = map[string]NewExchangeFn{}
+	exchangeFactory      = map[string]NewExchangeFn{}
+	exchangeFactoryMutex sync.Mutex
 
 	exchangeMutex sync.Mutex
 	exchanges     = map[string]Exchange{}
@@ -17,6 +18,8 @@ var (
 type NewExchangeFn func(cfg Config, cltName string) (t Exchange, err error)
 
 func RegisterExchange(name string, fn NewExchangeFn) {
+	exchangeFactoryMutex.Lock()
+	defer exchangeFactoryMutex.Unlock()
 	exchangeFactory[name] = fn
 }
 
@@ -35,7 +38,9 @@ func NewExchange(name string, cfg Config, cltName string) (ex Exchange, err erro
 			}
 		}()
 	}
+	exchangeFactoryMutex.Lock()
 	fn, ok := exchangeFactory[name]
+	exchangeFactoryMutex.Unlock()
 	if !ok {
 		err = fmt.Errorf("no such exchange %s", name)
 		return
