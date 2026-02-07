@@ -13,7 +13,7 @@ import (
 )
 
 func (b *OkxTrader) runPublic() (err error) {
-	b.wsPublic, err = ws.NewWSConn(WSOkexPUbilc, func(ws *ws.WSConn) error {
+	b.wsPublic, err = ws.NewWSConn(WSOkexPublic, func(ws *ws.WSConn) error {
 		// watch when reconnect
 		for _, v := range b.watchPublics {
 			err1 := ws.WriteMsg(v)
@@ -222,8 +222,6 @@ func getStrTs(dict map[string]interface{}, key string) (nTs int64) {
 		return
 	}
 	return nTs
-	// t = time.Unix(nTs/1000, (nTs%1000)*int64(time.Millisecond))
-	return
 }
 
 func getStrFloat(dict map[string]interface{}, key string) float64 {
@@ -288,8 +286,8 @@ func parseWsCandle(sj *simplejson.Json) (ret []*Candle, err error) {
 		}
 		nTs, err = strconv.ParseInt(values[0].(string), 10, 64)
 		if err != nil {
-			panic(fmt.Sprintf("trans candle error: %#v", values))
-			return
+			log.Errorf("parseWsCandle parse timestamp error: %#v, %s", values, err.Error())
+			continue
 		}
 		// unfinished kline
 		if values[8].(string) == "0" {

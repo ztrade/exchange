@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/ztrade/exchange/okx/api/market"
 	. "github.com/ztrade/trademodel"
 )
@@ -14,7 +15,7 @@ import (
 func transCandle(values [9]string) (ret *Candle) {
 	nTs, err := strconv.ParseInt(values[0], 10, 64)
 	if err != nil {
-		panic(fmt.Sprintf("trans candle error: %#v", values))
+		log.Errorf("transCandle parse timestamp error: %#v, %s", values, err.Error())
 		return nil
 	}
 	ret = &Candle{
@@ -36,7 +37,8 @@ func parseFloat(str string) float64 {
 	}
 	f, err := strconv.ParseFloat(str, 64)
 	if err != nil {
-		panic("okex parseFloat error:" + err.Error())
+		log.Errorf("okex parseFloat error: %s, input: %s", err.Error(), str)
+		return 0
 	}
 	return f
 }

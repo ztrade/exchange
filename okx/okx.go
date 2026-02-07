@@ -33,7 +33,7 @@ var (
 	background = context.Background()
 
 	ApiAddr       = "https://www.okx.com/"
-	WSOkexPUbilc  = "wss://wsaws.okx.com:8443/ws/v5/public"
+	WSOkexPublic  = "wss://wsaws.okx.com:8443/ws/v5/public"
 	WSOkexPrivate = "wss://wsaws.okx.com:8443/ws/v5/private"
 
 	TypeSPOT    = "SPOT"    //币币
@@ -216,7 +216,7 @@ func (b *OkxTrader) auth(ctx context.Context, req *http.Request) (err error) {
 }
 
 func (b *OkxTrader) Start() (err error) {
-	fmt.Println("start okx")
+	log.Info("start okx")
 	err = b.runPublic()
 	if err != nil {
 		return
@@ -225,12 +225,16 @@ func (b *OkxTrader) Start() (err error) {
 	if err != nil {
 		return
 	}
-	fmt.Println("start okx finished")
+	log.Info("start okx finished")
 	return
 }
 func (b *OkxTrader) Stop() (err error) {
-	b.wsPublic.Close()
-	b.wsUser.Close()
+	if b.wsPublic != nil {
+		b.wsPublic.Close()
+	}
+	if b.wsUser != nil {
+		b.wsUser.Close()
+	}
 	close(b.closeCh)
 	return
 }
@@ -347,7 +351,7 @@ func (b *OkxTrader) Watch(param exchange.WatchParam, fn exchange.WatchFn) (err e
 		b.balanceCb = fn
 		err = b.fetchBalanceAndPosition()
 	default:
-		err = fmt.Errorf("unknown wath param: %s", param.Type)
+		err = fmt.Errorf("unknown watch param: %s", param.Type)
 	}
 	return
 }
@@ -530,18 +534,19 @@ func (b *OkxTrader) processStopOrder(act TradeAction) (ret *Order, err error) {
 	return
 }
 func (b *OkxTrader) CancelOrder(old *Order) (order *Order, err error) {
-	_, ok := b.ordersCache.Load(old.OrderID)
-	if ok {
+	_, inNormal := b.ordersCache.Load(old.OrderID)
+	_, inAlgo := b.stopOrdersCache.Load(old.OrderID)
+	if inNormal {
 		order, err = b.cancelNormalOrder(old)
 		if err != nil {
 			return
 		}
 		b.ordersCache.Delete(old.OrderID)
-	}
-	_, ok = b.stopOrdersCache.Load(old.OrderID)
-	if ok {
+	} else if inAlgo {
 		order, err = b.cancelAlgoOrder(old)
 		b.stopOrdersCache.Delete(old.OrderID)
+	} else {
+		err = fmt.Errorf("order %s not found in cache", old.OrderID)
 	}
 	return
 }
