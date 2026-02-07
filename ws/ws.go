@@ -36,7 +36,7 @@ type WSConn struct {
 	pingFn     PingFn
 	pongFn     PongFn
 	closeCh    chan int
-	writeMuetx sync.Mutex
+	writeMutex sync.Mutex
 	wg         sync.WaitGroup
 }
 
@@ -79,24 +79,24 @@ func (conn *WSConn) Close() (err error) {
 }
 
 func (conn *WSConn) WriteText(value string) (err error) {
-	conn.writeMuetx.Lock()
+	conn.writeMutex.Lock()
 	if conn.ws != nil {
 		err = conn.ws.WriteMessage(websocket.TextMessage, []byte(value))
 	} else {
 		log.Warnf("WriteText ignore conn of %s not init", conn.addr)
 	}
-	conn.writeMuetx.Unlock()
+	conn.writeMutex.Unlock()
 	return
 }
 
 func (conn *WSConn) WriteMsg(value interface{}) (err error) {
-	conn.writeMuetx.Lock()
+	conn.writeMutex.Lock()
 	if conn.ws != nil {
 		err = conn.ws.WriteJSON(value)
 	} else {
 		log.Warnf("WriteMsg ignore conn of %s not init", conn.addr)
 	}
-	conn.writeMuetx.Unlock()
+	conn.writeMutex.Unlock()
 	return
 }
 
@@ -167,13 +167,23 @@ Out:
 	}
 	reConn := <-needReconn
 	if reConn {
-		for i := 0; i != 100; i++ {
+		maxRetries := 100
+		var reconnected bool
+		for i := 0; i < maxRetries; i++ {
 			err = conn.connect()
 			if err == nil {
+				reconnected = true
 				break
 			}
-			log.Errorf("ws reconnect %d to failed: %s", i, err.Error())
-			time.Sleep(time.Second)
+			backoff := time.Duration(i+1) * time.Second
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
+			}
+			log.Errorf("ws reconnect %d to %s failed: %s, retry in %s", i, conn.addr, err.Error(), backoff)
+			time.Sleep(backoff)
+		}
+		if !reconnected {
+			log.Errorf("ws reconnect to %s failed after %d attempts, giving up", conn.addr, maxRetries)
 		}
 	}
 }
