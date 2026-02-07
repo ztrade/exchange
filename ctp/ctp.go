@@ -17,7 +17,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
-	"github.com/ztrade/base/common"
 	"github.com/ztrade/ctp"
 	"github.com/ztrade/exchange"
 	"github.com/ztrade/exchange/ctp/util"
@@ -50,10 +49,10 @@ type CtpExchange struct {
 	depthCb       exchange.WatchFn
 	tradeMarketCb exchange.WatchFn
 
-	prevVolume  float64
+	prevVolume  sync.Map // map[string]float64, per-symbol previous volume
 	preTurnover float64
 	orderID     uint64
-	orders      map[string]*Order
+	orders      sync.Map // map[string]*Order
 
 	strStart  string
 	startOnce sync.Once
@@ -107,7 +106,6 @@ func NewCtpExchange(cfg exchange.Config, cltName string) (c *CtpExchange, err er
 	c.timeout = time.Second * 30
 	t := time.Now()
 	c.strStart = t.Format("01021504")
-	c.orders = make(map[string]*Order)
 	c.klines = make(map[string]*util.CTPKline)
 	return
 }
@@ -497,21 +495,24 @@ func (c *CtpExchange) ProcessOrder(act TradeAction) (ret *Order, err error) {
 	} else {
 		ret.Side = "sell"
 	}
-	c.orders[strOrderID] = ret
+	c.orders.Store(strOrderID, ret)
 	log.Info("processOrder finished:", strOrderID)
 	return
 }
 
 func (c *CtpExchange) CancelAllOrders() (orders []*Order, err error) {
-	for k, v := range c.orders {
+	c.orders.Range(func(key, value interface{}) bool {
+		k := key.(string)
+		v := value.(*Order)
 		if v.Status == OrderStatusFilled || v.Status == OrderStatusCanceled {
-			continue
+			return true
 		}
 		err = c.cancelOrder(k, v)
 		if err != nil {
 			log.Errorf("cancel order %s failed: %s", k, err.Error())
 		}
-	}
+		return true
+	})
 
 	return
 }
@@ -597,11 +598,13 @@ func (c *CtpExchange) onDepthData(pDepthMarketData *ctp.CThostFtdcDepthMarketDat
 	if !c.HasInit() {
 		return
 	}
-	if c.prevVolume == 0 {
-		c.prevVolume = float64(pDepthMarketData.Volume)
-		// c.preTurnover = float64(pDepthMarketData.Turnover)
+	symbol := pDepthMarketData.InstrumentID
+	prevVol, hasPrev := c.prevVolume.Load(symbol)
+	if !hasPrev {
+		c.prevVolume.Store(symbol, float64(pDepthMarketData.Volume))
 		return
 	}
+	prevVolume := prevVol.(float64)
 	now := time.Now()
 	loc, _ := time.LoadLocation("Asia/Shanghai")
 	date := now.Format("20060102")
@@ -618,7 +621,6 @@ func (c *CtpExchange) onDepthData(pDepthMarketData *ctp.CThostFtdcDepthMarketDat
 	depth.Sells = append(depth.Sells, DepthInfo{
 		Price:  pDepthMarketData.AskPrice1,
 		Amount: float64(pDepthMarketData.AskVolume1)})
-	var symbol = pDepthMarketData.InstrumentID
 	ret, ok := c.symbolMap.Load(symbol)
 	if ok {
 		symbol = ret.(string)
@@ -628,8 +630,8 @@ func (c *CtpExchange) onDepthData(pDepthMarketData *ctp.CThostFtdcDepthMarketDat
 	}
 	var trade Trade
 	trade.Time = tm
-	trade.Amount = float64(pDepthMarketData.Volume) - c.prevVolume
-	c.prevVolume = float64(pDepthMarketData.Volume)
+	trade.Amount = float64(pDepthMarketData.Volume) - prevVolume
+	c.prevVolume.Store(symbol, float64(pDepthMarketData.Volume))
 	// turnover := pDepthMarketData.Turnover - c.preTurnover
 	// c.preTurnover = pDepthMarketData.Turnover
 	trade.Price = pDepthMarketData.LastPrice
@@ -648,8 +650,9 @@ func (c *CtpExchange) onDepthData(pDepthMarketData *ctp.CThostFtdcDepthMarketDat
 }
 
 func (c *CtpExchange) onTrade(pTrade *ctp.CThostFtdcTradeField) {
-	v, ok := c.orders[pTrade.OrderRef]
+	val, ok := c.orders.Load(pTrade.OrderRef)
 	if ok {
+		v := val.(*Order)
 		if pTrade.Volume == int(v.Amount) {
 			v.Status = OrderStatusFilled
 		} else {
@@ -675,11 +678,12 @@ func (c *CtpExchange) onTrade(pTrade *ctp.CThostFtdcTradeField) {
 func (c *CtpExchange) onOrder(p *ctp.CThostFtdcOrderField) {
 	buf, _ := json.Marshal(p)
 	log.Info("onOrder:", string(buf))
-	o, ok := c.orders[p.OrderRef]
+	val, ok := c.orders.Load(p.OrderRef)
 	if !ok {
-		log.Warnf("updateOrderStatus  not exist, %s", string(buf))
+		log.Warnf("updateOrderStatus not exist, %s", string(buf))
 		return
 	}
+	o := val.(*Order)
 	o.OrderID = p.OrderSysID
 	if p.OrderStatus == '0' {
 		o.Status = OrderStatusFilled
@@ -721,14 +725,16 @@ func (c *CtpExchange) updatePosition(resps []*ctp.CThostFtdcInvestorPositionFiel
 	}
 	for k, v := range posCache {
 		var posMerge Position
-		var totalPrice float64
+		var totalCost float64
 		for _, p := range v {
-			totalPrice += p.Price
+			totalCost += p.Price * p.Hold
 			posMerge.Hold += p.Hold
 		}
-		posMerge.Price = common.FloatMul(totalPrice, posMerge.Hold)
+		if posMerge.Hold != 0 {
+			posMerge.Price = totalCost / posMerge.Hold
+		}
 		posMerge.Symbol = k
-		fmt.Println("pos:", posMerge)
+		log.Infof("pos: %+v", posMerge)
 		c.positionCb(&posMerge)
 	}
 }
