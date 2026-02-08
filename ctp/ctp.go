@@ -191,7 +191,7 @@ func (c *CtpExchange) reconnect() (err error) {
 
 func (c *CtpExchange) initMdApi() (err error) {
 	util.WaitTradeTime()
-	c.mdApi = ctp.MdCreateFtdcMdApi("./ctp/md", false, false)
+	c.mdApi = ctp.MdCreateFtdcMdApi("./ctp/md", false, false, true)
 	c.mdApi.RegisterFront(fmt.Sprintf("tcp://%s", c.cfg.MdServer))
 	c.mdSpi, err = NewMdSpi(c.cfg, c.mdApi)
 	if err != nil {
@@ -215,7 +215,7 @@ func (c *CtpExchange) initTdApi() (err error) {
 	if err != nil {
 		return
 	}
-	tdApi := ctp.TdCreateFtdcTraderApi("./ctp/td")
+	tdApi := ctp.TdCreateFtdcTraderApi("./ctp/td", true)
 	tdApi.SubscribePrivateTopic(ctp.THOST_TERT_QUICK)
 	tdApi.SubscribePublicTopic(ctp.THOST_TERT_QUICK)
 	tdSpi := NewTdSpi(c.cfg, tdApi)

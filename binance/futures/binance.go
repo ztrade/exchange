@@ -411,7 +411,7 @@ func (b *BinanceTrade) ProcessOrder(act TradeAction) (ret *Order, err error) {
 	defer cancel()
 	orderType := bfutures.OrderTypeLimit
 	if act.Action.IsStop() {
-		orderType = bfutures.OrderTypeStopMarket
+		orderType = bfutures.OrderType(bfutures.AlgoOrderTypeStopMarket)
 	}
 	var side bfutures.SideType
 	if act.Action.IsLong() {

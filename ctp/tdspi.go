@@ -43,7 +43,7 @@ func NewTdSpi(cfg *Config, api *ctp.CThostFtdcTraderApi) *TdSpi {
 }
 
 func (s *TdSpi) Connect(ctx context.Context) (err error) {
-	s.api = ctp.TdCreateFtdcTraderApi("./td/")
+	s.api = ctp.TdCreateFtdcTraderApi("./td/", true)
 	s.api.RegisterSpi(s)
 	s.api.RegisterFront(fmt.Sprintf("tcp://%s", s.cfg.TdServer))
 	s.api.Init()
