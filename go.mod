@@ -12,7 +12,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/viper v1.21.0
 	github.com/ztrade/ctp v0.0.4
-	github.com/ztrade/trademodel v1.1.7
+	github.com/ztrade/trademodel v1.1.8
 )
 
 require (
