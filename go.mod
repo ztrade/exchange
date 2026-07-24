@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/adshao/go-binance/v2 v2.8.10
+	github.com/bitfinexcom/bitfinex-api-go v0.0.0-20250819165618-fe55c5aaaf5d
 	github.com/bitly/go-simplejson v0.5.1
 	github.com/deepmap/oapi-codegen v1.16.3
 	github.com/getkin/kin-openapi v0.133.0
@@ -71,6 +72,7 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
+	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
