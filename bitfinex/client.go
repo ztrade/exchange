@@ -537,7 +537,8 @@ func (b *Client) newOrderRequest(action TradeAction) *bfxorder.NewRequest {
 		Symbol: b.normalizeSymbol(action.Symbol),
 		Amount: amount,
 		Price:  price,
-		Close:  b.kind == KindFutures && !action.Action.IsOpen(),
+		// Close flag not work,just remove it
+		// Close:  b.kind == KindFutures && !action.Action.IsOpen(),
 	}
 	if b.kind == KindFutures {
 		request.Leverage = b.cfg.Leverage
