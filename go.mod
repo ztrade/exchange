@@ -9,11 +9,13 @@ require (
 	github.com/deepmap/oapi-codegen v1.16.3
 	github.com/getkin/kin-openapi v0.133.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/hyperjiang/futu v1.7.0
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/viper v1.21.0
 	github.com/ztrade/ctp v0.0.4
 	github.com/ztrade/trademodel v1.1.8
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -47,6 +49,7 @@ require (
 	github.com/gomarkdown/markdown v0.0.0-20250810172220-2e2c11897d1a // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/hyperjiang/rsa v1.0.0 // indirect
 	github.com/iris-contrib/schema v0.0.6 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
@@ -77,6 +80,7 @@ require (
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/schollz/closestmatch v2.1.0+incompatible // indirect
@@ -104,7 +108,6 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
