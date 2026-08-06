@@ -97,16 +97,33 @@ var klineTypeNames = map[int32]string{
 	adapt.KLType_Year:    "1y",
 }
 
-func marketIDs(market string) (qot, trd int32, err error) {
-	m := strings.ToUpper(strings.TrimSpace(market))
-	if m == "" {
-		return 0, 0, nil
+// normalizeMarkets validates and deduplicates the market list, keeping the
+// configured order.
+func normalizeMarkets(markets []string) ([]string, error) {
+	seen := make(map[string]bool)
+	out := make([]string, 0, len(markets))
+	for _, market := range markets {
+		market = strings.ToUpper(strings.TrimSpace(market))
+		if market == "" {
+			continue
+		}
+		if _, ok := qotMarketIDs[market]; !ok {
+			return nil, fmt.Errorf("futu unsupported market %q, want HK/US/SH/SZ/SG/JP", market)
+		}
+		if !seen[market] {
+			seen[market] = true
+			out = append(out, market)
+		}
 	}
-	qot, ok := qotMarketIDs[m]
-	if !ok {
-		return 0, 0, fmt.Errorf("futu unsupported market %q, want HK/US/SH/SZ/SG/JP", market)
-	}
-	return qot, trdMarketIDs[m], nil
+	return out, nil
+}
+
+func qotMarketID(market string) int32 {
+	return qotMarketIDs[strings.ToUpper(market)]
+}
+
+func trdMarketID(market string) int32 {
+	return trdMarketIDs[strings.ToUpper(market)]
 }
 
 func securityTypeID(secType string) (int32, error) {

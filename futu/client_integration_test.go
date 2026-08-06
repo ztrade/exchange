@@ -3,6 +3,7 @@
 package futu
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -38,7 +39,7 @@ func TestFutuIntegrationPublicREST(t *testing.T) {
 		t.Fatalf("Symbols: %v", err)
 	}
 	if len(symbols) == 0 {
-		t.Fatalf("Symbols returned nothing; configure FUTU_SYMBOLS/FUTU_PLATES or a valid FUTU_MARKET")
+		t.Fatalf("Symbols returned nothing; configure FUTU_SYMBOLS/FUTU_PLATES")
 	}
 	for _, symbol := range symbols {
 		if symbol.Symbol == "" || symbol.Exchange != "futu" {
@@ -373,7 +374,6 @@ func newIntegrationClient(t *testing.T, private bool) *Client {
 	config := FutuConfig{
 		Addr:        integrationString("FUTU_ADDR", ":11111"),
 		Timeout:     integrationDuration("FUTU_TIMEOUT", 15*time.Second),
-		Market:      integrationString("FUTU_MARKET", "HK"),
 		Symbols:     integrationList("FUTU_SYMBOLS"),
 		Plates:      integrationList("FUTU_PLATES"),
 		KLineLimit:  int(integrationInt64(t, "FUTU_KLINE_LIMIT", 1000)),
@@ -387,6 +387,12 @@ func newIntegrationClient(t *testing.T, private bool) *Client {
 		config.SecurityFirm = int32(integrationInt64(t, "FUTU_SECURITY_FIRM", 0))
 		config.UnlockTrade = integrationBool("FUTU_UNLOCK_TRADE")
 	}
+	buf, _ := json.Marshal(config)
+	fmt.Println(string(buf))
+
+	buf2 := `{"Type":"futu","Addr":"","Timeout":0,"TrdEnv":"","Market":"US","AccID":0,"PwdMD5":"","SecurityFirm":0,"UnlockTrade":false,"Symbols":null,"Plates":null,"SecType":"","KLineLimit":0,"Currency":"","Resolutions":""}`
+	config = FutuConfig{}
+	json.Unmarshal([]byte(buf2), &config)
 	client, err := NewClient(config)
 	if err != nil {
 		t.Fatalf("NewClient: %v (is FutuOpenD running at %s?)", err, config.Addr)

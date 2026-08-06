@@ -16,10 +16,11 @@ type FutuConfig struct {
 	// TrdEnv selects the trading environment: "real" or "simulate".
 	// Leave empty when only market data is needed.
 	TrdEnv string `mapstructure:"trd_env"`
-	// Market is the default market: HK / US / SH / SZ / SG / JP.
-	// Used to normalize symbols without a market prefix, and for account
-	// selection when AccID is not set.
-	Market string `mapstructure:"market"`
+	// Markets restricts the adapter to the given markets, e.g. ["HK", "US"].
+	// When empty, all supported markets are used (HK/US/SH/SZ/SG/JP) and the
+	// market of a symbol is taken from its "MARKET.CODE" prefix. Symbols
+	// without a market prefix are rejected.
+	Markets []string `mapstructure:"markets"`
 	// AccID is the Futu business account id. When empty the first account of
 	// the selected market and environment is used.
 	AccID uint64 `mapstructure:"acc_id"`
@@ -32,7 +33,7 @@ type FutuConfig struct {
 	// has been set in FutuOpenD.
 	UnlockTrade bool `mapstructure:"unlock_trade"`
 	// Symbols is the explicit symbol list, e.g. ["HK.00700", "US.AAPL"].
-	// Symbols without a market prefix use the configured Market.
+	// Symbols must carry a MARKET.CODE prefix.
 	Symbols []string `mapstructure:"symbols"`
 	// Plates is the plate list to expand into symbols, e.g. ["HK.ALL"].
 	Plates []string `mapstructure:"plates"`

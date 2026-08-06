@@ -42,6 +42,9 @@ const (
 	defaultResolutions = "1m,3m,5m,10m,15m,30m,1h,2h,3h,4h,1d,1w,1M"
 )
 
+// allMarkets is the market list used when Markets is not configured.
+var allMarkets = []string{"HK", "US", "SH", "SZ", "SG", "JP"}
+
 var _ exchange.Exchange = (*Client)(nil)
 
 // futuSDK is the subset of the Futu SDK used by the adapter. It is an
@@ -76,8 +79,7 @@ type Client struct {
 	sdk         futuSDK
 	timeout     time.Duration
 	klineLimit  int
-	qotMarket   int32
-	trdMarket   int32
+	markets     []string
 	trdEnv      int32
 	resolutions string
 
@@ -93,10 +95,14 @@ type Client struct {
 	started        bool
 	stopped        bool
 
-	tradeMu     sync.Mutex
-	header      *trdcommon.TrdHeader
-	refreshMu   sync.Mutex
-	lastRefresh time.Time
+	tradeMu         sync.Mutex
+	headers         map[string]*trdcommon.TrdHeader
+	accountsFetched bool
+	accList         []*trdcommon.TrdAcc
+	accByID         *trdcommon.TrdAcc
+	pushSubscribed  bool
+	refreshMu       sync.Mutex
+	lastRefresh     time.Time
 }
 
 // NewClient creates a Futu client and connects to FutuOpenD.
@@ -109,17 +115,12 @@ func NewClient(cfg FutuConfig) (*Client, error) {
 	if klineLimit <= 0 {
 		klineLimit = defaultKLineCnt
 	}
-	market := strings.ToUpper(strings.TrimSpace(cfg.Market))
-	if market == "" {
-		for _, symbol := range cfg.Symbols {
-			parts := strings.SplitN(strings.TrimSpace(symbol), ".", 2)
-			if len(parts) == 2 && parts[0] != "" {
-				market = strings.ToUpper(parts[0])
-				break
-			}
-		}
+	markets := make([]string, 0, len(cfg.Markets))
+	markets = append(markets, cfg.Markets...)
+	if len(markets) == 0 {
+		markets = allMarkets
 	}
-	qotMarket, trdMarket, err := marketIDs(market)
+	markets, err := normalizeMarkets(markets)
 	if err != nil {
 		return nil, err
 	}
@@ -142,8 +143,7 @@ func NewClient(cfg FutuConfig) (*Client, error) {
 		cfg:            cfg,
 		timeout:        timeout,
 		klineLimit:     klineLimit,
-		qotMarket:      qotMarket,
-		trdMarket:      trdMarket,
+		markets:        markets,
 		trdEnv:         trdEnv,
 		resolutions:    resolutions,
 		candleCbs:      make(map[string]exchange.WatchFn),
@@ -151,6 +151,7 @@ func NewClient(cfg FutuConfig) (*Client, error) {
 		depthCbs:       make(map[string]exchange.WatchFn),
 		tradeMarketCbs: make(map[string]exchange.WatchFn),
 		subscribed:     make(map[string]bool),
+		headers:        make(map[string]*trdcommon.TrdHeader),
 	}
 	sdk, err := newSDK(cfg)
 	if err != nil {
@@ -188,9 +189,7 @@ func (c *Client) Start() error {
 	}
 	c.mu.Unlock()
 	if c.tradingEnabled() {
-		if err := c.initTrade(); err != nil {
-			return err
-		}
+		c.ensureTradeSoft()
 		if err := c.fetchBalanceAndPosition(); err != nil {
 			return err
 		}
@@ -213,7 +212,7 @@ func (c *Client) Stop() error {
 
 // Symbols returns the configured symbols. The code list comes from the
 // explicit "symbols", the "plates" (expanded through QotGetPlateSecurity),
-// or the whole configured market when both are empty.
+// or the whole configured markets when both are empty.
 func (c *Client) Symbols() ([]Symbol, error) {
 	codes := make(map[string]bool)
 	for _, raw := range c.cfg.Symbols {
@@ -240,17 +239,20 @@ func (c *Client) Symbols() ([]Symbol, error) {
 	}
 
 	var infos []*qotcommon.SecurityStaticInfo
-	if len(codes) == 0 && c.cfg.Market != "" {
+	if len(codes) == 0 && len(c.markets) > 0 {
 		secType, err := securityTypeID(c.cfg.SecType)
 		if err != nil {
 			return nil, err
 		}
-		infos, err = c.sdk.GetStaticInfoWithContext(ctx,
-			adapt.With("market", c.qotMarket),
-			adapt.With("secType", secType),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("futu get static info: %w", err)
+		for _, market := range c.markets {
+			marketInfos, err := c.sdk.GetStaticInfoWithContext(ctx,
+				adapt.With("market", qotMarketID(market)),
+				adapt.With("secType", secType),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("futu get static info for %s: %w", market, err)
+			}
+			infos = append(infos, marketInfos...)
 		}
 	} else if len(codes) > 0 {
 		list := make([]string, 0, len(codes))
@@ -266,11 +268,17 @@ func (c *Client) Symbols() ([]Symbol, error) {
 	}
 
 	symbols := make([]Symbol, 0, len(infos))
+	seen := make(map[string]bool)
 	for _, info := range infos {
 		if info == nil || info.GetBasic() == nil || info.GetBasic().GetSecurity() == nil {
 			continue
 		}
-		symbols = append(symbols, symbolFromStaticInfo(info, c.resolutions))
+		symbol := symbolFromStaticInfo(info, c.resolutions)
+		if seen[symbol.Symbol] {
+			continue
+		}
+		seen[symbol.Symbol] = true
+		symbols = append(symbols, symbol)
 	}
 	return symbols, nil
 }
@@ -375,9 +383,7 @@ func (c *Client) Watch(param exchange.WatchParam, fn exchange.WatchFn) error {
 		c.mu.Lock()
 		c.positionCb = fn
 		c.mu.Unlock()
-		if err := c.ensureTrade(); err != nil {
-			return err
-		}
+		c.ensureTradeSoft()
 		return c.fetchBalanceAndPosition()
 	case exchange.WatchTypeBalance:
 		if !c.tradingEnabled() {
@@ -386,9 +392,7 @@ func (c *Client) Watch(param exchange.WatchParam, fn exchange.WatchFn) error {
 		c.mu.Lock()
 		c.balanceCb = fn
 		c.mu.Unlock()
-		if err := c.ensureTrade(); err != nil {
-			return err
-		}
+		c.ensureTradeSoft()
 		return c.fetchBalanceAndPosition()
 	}
 
@@ -440,14 +444,19 @@ func (c *Client) ProcessOrder(action TradeAction) (*Order, error) {
 	if !c.tradingEnabled() {
 		return nil, errors.New("futu order submission requires trd_env/acc_id config")
 	}
-	if err := c.ensureTrade(); err != nil {
-		return nil, err
-	}
 	code, err := c.normalizeSymbol(action.Symbol)
 	if err != nil {
 		return nil, err
 	}
-	trdSide := c.trdSide(action.Action)
+	market, err := c.marketOfSymbol(code)
+	if err != nil {
+		return nil, err
+	}
+	header, err := c.headerFor(market)
+	if err != nil {
+		return nil, err
+	}
+	trdSide := c.trdSide(action.Action, market)
 	orderType, price, auxPrice := orderTypePrice(action)
 	ctx, cancel := c.requestContext()
 	defer cancel()
@@ -458,7 +467,7 @@ func (c *Client) ProcessOrder(action TradeAction) (*Order, error) {
 	if auxPrice > 0 {
 		opts = append(opts, adapt.With("auxPrice", auxPrice))
 	}
-	res, err := c.sdk.PlaceOrderWithContext(ctx, c.header, trdSide, orderType, code, absFloat(action.Amount), price, opts...)
+	res, err := c.sdk.PlaceOrderWithContext(ctx, header, trdSide, orderType, code, absFloat(action.Amount), price, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -482,16 +491,21 @@ func (c *Client) CancelOrder(old *Order) (*Order, error) {
 	if !c.tradingEnabled() {
 		return nil, errors.New("futu order cancellation requires trd_env/acc_id config")
 	}
-	if err := c.ensureTrade(); err != nil {
-		return nil, err
-	}
 	orderID, err := strconv.ParseUint(old.OrderID, 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("futu invalid order id %q: %w", old.OrderID, err)
 	}
+	market, err := c.marketOfSymbol(old.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	header, err := c.headerFor(market)
+	if err != nil {
+		return nil, err
+	}
 	ctx, cancel := c.requestContext()
 	defer cancel()
-	if _, err := c.sdk.ModifyOrderWithContext(ctx, c.header, orderID, adapt.ModifyOrderOp_Cancel); err != nil {
+	if _, err := c.sdk.ModifyOrderWithContext(ctx, header, orderID, adapt.ModifyOrderOp_Cancel); err != nil {
 		return nil, err
 	}
 	ret := *old
@@ -504,27 +518,33 @@ func (c *Client) CancelAllOrders() ([]*Order, error) {
 	if !c.tradingEnabled() {
 		return nil, errors.New("futu order cancellation requires trd_env/acc_id config")
 	}
-	if err := c.ensureTrade(); err != nil {
-		return nil, err
-	}
+	c.ensureTradeSoft()
 	ctx, cancel := c.requestContext()
 	defer cancel()
-	orders, err := c.sdk.GetOpenOrderListWithContext(ctx, c.header)
-	if err != nil {
-		return nil, err
-	}
-	canceled := make([]*Order, 0, len(orders))
-	for _, item := range orders {
-		if item == nil {
+	var canceled []*Order
+	for _, market := range c.markets {
+		c.tradeMu.Lock()
+		header := c.headers[market]
+		c.tradeMu.Unlock()
+		if header == nil {
 			continue
 		}
-		if _, err := c.sdk.ModifyOrderWithContext(ctx, c.header, item.GetOrderID(), adapt.ModifyOrderOp_Cancel); err != nil {
-			log.Warnf("futu cancel order %d failed: %v", item.GetOrderID(), err)
-			continue
+		orders, err := c.sdk.GetOpenOrderListWithContext(ctx, header)
+		if err != nil {
+			return nil, err
 		}
-		order := c.orderFromFutu(item)
-		order.Status = OrderStatusCanceled
-		canceled = append(canceled, order)
+		for _, item := range orders {
+			if item == nil {
+				continue
+			}
+			if _, err := c.sdk.ModifyOrderWithContext(ctx, header, item.GetOrderID(), adapt.ModifyOrderOp_Cancel); err != nil {
+				log.Warnf("futu cancel order %d failed: %v", item.GetOrderID(), err)
+				continue
+			}
+			order := c.orderFromFutu(item)
+			order.Status = OrderStatusCanceled
+			canceled = append(canceled, order)
+		}
 	}
 	return canceled, nil
 }
@@ -533,89 +553,176 @@ func (c *Client) tradingEnabled() bool {
 	return c.cfg.TrdEnv != ""
 }
 
-// ensureTrade resolves the trade account, unlocks it if configured, and
-// subscribes to account pushes.
-func (c *Client) ensureTrade() error {
+// ensureTrade resolves trade headers for the given markets (default: all
+// configured markets), unlocks the trade if configured, and subscribes to
+// account pushes. Headers are resolved lazily per market, so a client with
+// market data for several markets only needs an account for the markets it
+// actually trades.
+func (c *Client) ensureTrade(markets ...string) error {
+	if len(markets) == 0 {
+		markets = c.markets
+	}
+	if len(markets) == 0 {
+		return errors.New("futu trading requires at least one configured market")
+	}
 	c.tradeMu.Lock()
 	defer c.tradeMu.Unlock()
-	if c.header != nil {
+	allResolved := true
+	for _, market := range markets {
+		if _, ok := c.headers[market]; !ok {
+			allResolved = false
+			break
+		}
+	}
+	if allResolved {
 		return nil
 	}
 	ctx, cancel := c.requestContext()
 	defer cancel()
-	if err := c.pickAccount(ctx); err != nil {
-		return err
-	}
-	if c.cfg.UnlockTrade && c.cfg.PwdMD5 != "" {
-		if err := c.sdk.UnlockTradeWithContext(ctx, true, c.cfg.PwdMD5, c.cfg.SecurityFirm); err != nil {
-			return fmt.Errorf("futu unlock trade: %w", err)
+	if !c.accountsFetched {
+		accs, err := c.sdk.GetAccListWithContext(ctx, adapt.With("trdCategory", adapt.TrdCategory_Security))
+		if err != nil {
+			return fmt.Errorf("futu get account list: %w", err)
+		}
+		c.accList = accs
+		c.accountsFetched = true
+		if c.cfg.AccID != 0 {
+			for _, acc := range accs {
+				if acc != nil && acc.GetTrdEnv() == c.trdEnv && acc.GetAccID() == c.cfg.AccID {
+					c.accByID = acc
+					break
+				}
+			}
+			if c.accByID == nil {
+				return fmt.Errorf("futu account %d not found in %s environment", c.cfg.AccID, c.cfg.TrdEnv)
+			}
 		}
 	}
-	if err := c.sdk.SubscribeAccPushWithContext(ctx, []uint64{c.header.GetAccID()}); err != nil {
-		return fmt.Errorf("futu subscribe acc push: %w", err)
+
+	for _, market := range markets {
+		if _, ok := c.headers[market]; ok {
+			continue
+		}
+		var accID uint64
+		if c.accByID != nil {
+			if !marketAuthorized(c.accByID, trdMarketID(market)) {
+				return fmt.Errorf("futu account %d has no permission for market %s", c.cfg.AccID, market)
+			}
+			accID = c.accByID.GetAccID()
+		} else {
+			acc := c.pickAccountForMarket(c.accList, market)
+			if acc == nil {
+				return fmt.Errorf("futu no %s account found for market %s", c.cfg.TrdEnv, market)
+			}
+			accID = acc.GetAccID()
+		}
+		c.headers[market] = c.newHeader(accID, market)
+	}
+
+	if !c.pushSubscribed {
+		accIDs := make(map[uint64]bool)
+		for _, header := range c.headers {
+			accIDs[header.GetAccID()] = true
+		}
+		if c.cfg.UnlockTrade && c.cfg.PwdMD5 != "" {
+			if err := c.sdk.UnlockTradeWithContext(ctx, true, c.cfg.PwdMD5, c.cfg.SecurityFirm); err != nil {
+				return fmt.Errorf("futu unlock trade: %w", err)
+			}
+		}
+		accIDList := make([]uint64, 0, len(accIDs))
+		for accID := range accIDs {
+			accIDList = append(accIDList, accID)
+		}
+		if err := c.sdk.SubscribeAccPushWithContext(ctx, accIDList); err != nil {
+			return fmt.Errorf("futu subscribe acc push: %w", err)
+		}
+		c.pushSubscribed = true
 	}
 	return nil
 }
 
-func (c *Client) initTrade() error {
-	return c.ensureTrade()
+// ensureTradeSoft resolves trade headers for every configured market,
+// skipping markets without a usable account.
+func (c *Client) ensureTradeSoft() {
+	for _, market := range c.markets {
+		if err := c.ensureTrade(market); err != nil {
+			log.Debugf("futu skip trade market %s: %v", market, err)
+		}
+	}
 }
 
-func (c *Client) pickAccount(ctx context.Context) error {
-	accs, err := c.sdk.GetAccListWithContext(ctx, adapt.With("trdCategory", adapt.TrdCategory_Security))
-	if err != nil {
-		return fmt.Errorf("futu get account list: %w", err)
-	}
-	var matched []*trdcommon.TrdAcc
+func (c *Client) pickAccountForMarket(accs []*trdcommon.TrdAcc, market string) *trdcommon.TrdAcc {
 	for _, acc := range accs {
 		if acc == nil || acc.GetTrdEnv() != c.trdEnv {
 			continue
 		}
-		if c.cfg.AccID != 0 && acc.GetAccID() == c.cfg.AccID {
-			c.header = c.newHeader(acc.GetAccID())
-			return nil
-		}
-		if marketAuthorized(acc, c.trdMarket) {
-			matched = append(matched, acc)
+		if marketAuthorized(acc, trdMarketID(market)) {
+			return acc
 		}
 	}
-	if c.cfg.AccID != 0 {
-		return fmt.Errorf("futu account %d not found in %s environment", c.cfg.AccID, c.cfg.TrdEnv)
-	}
-	if len(matched) == 0 {
-		return fmt.Errorf("futu no %s account found for market %s", c.cfg.TrdEnv, c.cfg.Market)
-	}
-	c.header = c.newHeader(matched[0].GetAccID())
 	return nil
 }
 
-func (c *Client) newHeader(accID uint64) *trdcommon.TrdHeader {
+func (c *Client) newHeader(accID uint64, market string) *trdcommon.TrdHeader {
 	if c.trdEnv == int32(trdcommon.TrdEnv_TrdEnv_Real) {
-		return adapt.NewTradeHeader(accID, c.trdMarket)
+		return adapt.NewTradeHeader(accID, trdMarketID(market))
 	}
-	return adapt.NewSimulationTradeHeader(accID, c.trdMarket)
+	return adapt.NewSimulationTradeHeader(accID, trdMarketID(market))
+}
+
+// headerFor returns the trade header of a market, resolving it on first use.
+func (c *Client) headerFor(market string) (*trdcommon.TrdHeader, error) {
+	if err := c.ensureTrade(market); err != nil {
+		return nil, err
+	}
+	c.tradeMu.Lock()
+	defer c.tradeMu.Unlock()
+	header, ok := c.headers[market]
+	if !ok {
+		return nil, fmt.Errorf("futu no trade header for market %s", market)
+	}
+	return header, nil
 }
 
 func (c *Client) fetchBalanceAndPosition() error {
 	c.tradeMu.Lock()
-	header := c.header
+	headers := make([]*trdcommon.TrdHeader, 0, len(c.markets))
+	markets := make([]string, 0, len(c.markets))
+	for _, market := range c.markets {
+		if header, ok := c.headers[market]; ok {
+			headers = append(headers, header)
+			markets = append(markets, market)
+		}
+	}
 	c.tradeMu.Unlock()
-	if header == nil {
+	if len(headers) == 0 {
 		return errors.New("futu trade account not initialized")
 	}
 	ctx, cancel := c.requestContext()
 	defer cancel()
-	funds, err := c.sdk.GetFundsWithContext(ctx, header)
-	if err != nil {
-		return err
+	var lastErr error
+	succeeded := 0
+	for i, header := range headers {
+		funds, err := c.sdk.GetFundsWithContext(ctx, header)
+		if err != nil {
+			lastErr = err
+			log.Warnf("futu get funds for %s: %v", markets[i], err)
+			continue
+		}
+		c.handleFunds(funds, markets[i])
+		positions, err := c.sdk.GetPositionListWithContext(ctx, header)
+		if err != nil {
+			lastErr = err
+			log.Warnf("futu get positions for %s: %v", markets[i], err)
+			continue
+		}
+		for _, pos := range positions {
+			c.handlePosition(pos)
+		}
+		succeeded++
 	}
-	c.handleFunds(funds)
-	positions, err := c.sdk.GetPositionListWithContext(ctx, header)
-	if err != nil {
-		return err
-	}
-	for _, pos := range positions {
-		c.handlePosition(pos)
+	if succeeded == 0 {
+		return lastErr
 	}
 	return nil
 }
@@ -638,12 +745,12 @@ func (c *Client) refreshAccount() {
 	}()
 }
 
-func (c *Client) handleFunds(funds *trdcommon.Funds) {
+func (c *Client) handleFunds(funds *trdcommon.Funds, market string) {
 	if funds == nil {
 		return
 	}
 	balance := &Balance{
-		Currency:  c.currency(),
+		Currency:  c.currency(market),
 		Available: funds.GetCash() - funds.GetFrozenCash(),
 		Frozen:    funds.GetFrozenCash(),
 		Balance:   funds.GetCash(),
@@ -903,11 +1010,11 @@ func (c *Client) orderFromFutu(order *trdcommon.Order) *Order {
 	}
 }
 
-func (c *Client) trdSide(action TradeType) int32 {
+func (c *Client) trdSide(action TradeType, market string) int32 {
 	if action.IsLong() {
 		return adapt.TrdSide_Buy
 	}
-	if isFuturesTrdMarket(c.trdMarket) || strings.EqualFold(c.cfg.Market, "US") {
+	if isFuturesTrdMarket(trdMarketID(market)) || market == "US" {
 		return int32(trdcommon.TrdSide_TrdSide_SellShort)
 	}
 	return adapt.TrdSide_Sell
@@ -928,15 +1035,27 @@ func (c *Client) requestContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), c.timeout)
 }
 
-func (c *Client) currency() string {
+func (c *Client) currency(market string) string {
 	if c.cfg.Currency != "" {
 		return c.cfg.Currency
 	}
-	currency, ok := marketCurrencies[strings.ToUpper(c.cfg.Market)]
+	currency, ok := marketCurrencies[strings.ToUpper(market)]
 	if !ok {
 		return "USD"
 	}
 	return currency
+}
+
+func (c *Client) marketOfSymbol(symbol string) (string, error) {
+	parts := strings.SplitN(strings.TrimSpace(symbol), ".", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return "", fmt.Errorf("futu symbol %q requires a MARKET.CODE prefix", symbol)
+	}
+	market := strings.ToUpper(parts[0])
+	if _, ok := qotMarketIDs[market]; !ok {
+		return "", fmt.Errorf("futu unsupported market %q", market)
+	}
+	return market, nil
 }
 
 func (c *Client) normalizeSymbol(symbol string) (string, error) {
@@ -948,17 +1067,17 @@ func (c *Client) normalizeSymbol(symbol string) (string, error) {
 	if len(parts) > 2 {
 		return "", fmt.Errorf("futu invalid symbol %q", symbol)
 	}
-	market := strings.ToUpper(strings.TrimSpace(c.cfg.Market))
 	code := raw
+	var market string
 	if len(parts) == 2 {
 		market = strings.ToUpper(parts[0])
 		code = parts[1]
 	}
 	if market == "" {
-		return "", fmt.Errorf("futu symbol %q requires a market prefix or a default market", symbol)
+		return "", fmt.Errorf("futu symbol %q requires a MARKET.CODE prefix (e.g. HK.00700)", symbol)
 	}
-	if _, _, err := marketIDs(market); err != nil {
-		return "", err
+	if _, ok := qotMarketIDs[market]; !ok {
+		return "", fmt.Errorf("futu unsupported market %q, want HK/US/SH/SZ/SG/JP", market)
 	}
 	if strings.TrimSpace(code) == "" {
 		return "", fmt.Errorf("futu invalid symbol %q", symbol)
@@ -972,9 +1091,10 @@ func (c *Client) codeWithMarket(secMarket int32, code string) string {
 	}
 	market, ok := secMarketNames[secMarket]
 	if !ok {
-		market = strings.ToUpper(c.cfg.Market)
-		if market == "" {
-			market = "US"
+		if len(c.markets) > 0 {
+			market = c.markets[0]
+		} else {
+			return code
 		}
 	}
 	return market + "." + code

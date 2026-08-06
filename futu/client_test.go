@@ -2,6 +2,7 @@ package futu
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,27 +33,30 @@ type subscribeCall struct {
 
 // fakeSDK implements futuSDK without touching the network.
 type fakeSDK struct {
-	accList      []*trdcommon.TrdAcc
-	funds        *trdcommon.Funds
-	positions    []*trdcommon.Position
-	openOrders   []*trdcommon.Order
-	staticInfos  []*qotcommon.SecurityStaticInfo
-	klPages      []*qotrequesthistorykl.S2C
-	recentKL     *qotgetkl.S2C
-	orderBook    *qotgetorderbook.S2C
-	tickers      *qotgetticker.S2C
-	placeResult  *trdplaceorder.S2C
-	placeCalls   []placeCall
-	modifyCalls  []modifyCall
-	historyErr   error
-	subscribes   []subscribeCall
-	accPushCalls [][]uint64
-	unlockCalls  int
-	handlers     map[uint32]futuclient.Handler
-	closed       bool
+	accList           []*trdcommon.TrdAcc
+	funds             *trdcommon.Funds
+	positions         []*trdcommon.Position
+	openOrders        []*trdcommon.Order
+	staticInfos       []*qotcommon.SecurityStaticInfo
+	klPages           []*qotrequesthistorykl.S2C
+	recentKL          *qotgetkl.S2C
+	orderBook         *qotgetorderbook.S2C
+	tickers           *qotgetticker.S2C
+	placeResult       *trdplaceorder.S2C
+	placeCalls        []placeCall
+	modifyCalls       []modifyCall
+	staticInfoCalls   int
+	staticInfoMarkets []int32
+	historyErr        error
+	subscribes        []subscribeCall
+	accPushCalls      [][]uint64
+	unlockCalls       int
+	handlers          map[uint32]futuclient.Handler
+	closed            bool
 }
 
 type placeCall struct {
+	header    *trdcommon.TrdHeader
 	trdSide   int32
 	orderType int32
 	code      string
@@ -62,6 +66,7 @@ type placeCall struct {
 }
 
 type modifyCall struct {
+	header  *trdcommon.TrdHeader
 	orderID uint64
 	op      int32
 }
@@ -69,6 +74,17 @@ type modifyCall struct {
 func newFakeSDK() *fakeSDK {
 	return &fakeSDK{
 		handlers: make(map[uint32]futuclient.Handler),
+	}
+}
+
+func trdMarketPrefix(market int32) string {
+	switch market {
+	case adapt.TrdMarket_HK:
+		return "HK"
+	case adapt.TrdMarket_US:
+		return "US"
+	default:
+		return ""
 	}
 }
 
@@ -95,6 +111,18 @@ func (f *fakeSDK) GetPositionListWithContext(ctx context.Context, header *trdcom
 }
 
 func (f *fakeSDK) GetOpenOrderListWithContext(ctx context.Context, header *trdcommon.TrdHeader, opts ...adapt.Option) ([]*trdcommon.Order, error) {
+	if header != nil {
+		prefix := trdMarketPrefix(header.GetTrdMarket())
+		if prefix != "" {
+			var out []*trdcommon.Order
+			for _, order := range f.openOrders {
+				if order != nil && strings.HasPrefix(order.GetCode(), prefix+".") {
+					out = append(out, order)
+				}
+			}
+			return out, nil
+		}
+	}
 	return f.openOrders, nil
 }
 
@@ -106,12 +134,12 @@ func (f *fakeSDK) PlaceOrderWithContext(ctx context.Context, header *trdcommon.T
 			auxPrice = v.(float64)
 		}
 	}
-	f.placeCalls = append(f.placeCalls, placeCall{trdSide: trdSide, orderType: orderType, code: code, qty: qty, price: price, auxPrice: auxPrice})
+	f.placeCalls = append(f.placeCalls, placeCall{header: header, trdSide: trdSide, orderType: orderType, code: code, qty: qty, price: price, auxPrice: auxPrice})
 	return f.placeResult, nil
 }
 
 func (f *fakeSDK) ModifyOrderWithContext(ctx context.Context, header *trdcommon.TrdHeader, orderID uint64, modifyOrderOp int32, opts ...adapt.Option) (*trdmodifyorder.S2C, error) {
-	f.modifyCalls = append(f.modifyCalls, modifyCall{orderID: orderID, op: modifyOrderOp})
+	f.modifyCalls = append(f.modifyCalls, modifyCall{header: header, orderID: orderID, op: modifyOrderOp})
 	return &trdmodifyorder.S2C{}, nil
 }
 
@@ -139,6 +167,11 @@ func (f *fakeSDK) RequestHistoryKLWithContext(ctx context.Context, code string, 
 }
 
 func (f *fakeSDK) GetStaticInfoWithContext(ctx context.Context, opts ...adapt.Option) ([]*qotcommon.SecurityStaticInfo, error) {
+	f.staticInfoCalls++
+	o := adapt.NewOptions(opts...)
+	if v, ok := o["market"]; ok {
+		f.staticInfoMarkets = append(f.staticInfoMarkets, v.(int32))
+	}
 	return f.staticInfos, nil
 }
 
@@ -183,7 +216,7 @@ func testConfig() FutuConfig {
 		Addr:    ":11111",
 		Timeout: time.Second,
 		TrdEnv:  "simulate",
-		Market:  "US",
+		Markets: []string{"US"},
 		AccID:   1619199,
 	}
 }
@@ -202,7 +235,7 @@ func TestNewFutuDecodesConfig(t *testing.T) {
 	config := viper.New()
 	config.Set("exchanges.futu_sim.addr", "127.0.0.1:11111")
 	config.Set("exchanges.futu_sim.trd_env", "simulate")
-	config.Set("exchanges.futu_sim.market", "US")
+	config.Set("exchanges.futu_sim.markets", []string{"US"})
 	config.Set("exchanges.futu_sim.acc_id", 1619199)
 	ex, err := NewFutu(exchange.WrapViper(config), "futu_sim")
 	if err != nil {
@@ -212,8 +245,8 @@ func TestNewFutuDecodesConfig(t *testing.T) {
 	if client.trdEnv != int32(trdcommon.TrdEnv_TrdEnv_Simulate) {
 		t.Fatalf("trd env = %d", client.trdEnv)
 	}
-	if client.qotMarket != adapt.QotMarket_US {
-		t.Fatalf("qot market = %d", client.qotMarket)
+	if len(client.markets) != 1 || client.markets[0] != "US" {
+		t.Fatalf("markets = %v", client.markets)
 	}
 	if err := client.Stop(); err != nil {
 		t.Fatalf("stop: %v", err)
@@ -223,13 +256,36 @@ func TestNewFutuDecodesConfig(t *testing.T) {
 	}
 }
 
+func TestDefaultMarketsAll(t *testing.T) {
+	client := newTestClient(t, FutuConfig{}, newFakeSDK())
+	defer client.Stop()
+	if len(client.markets) != len(allMarkets) {
+		t.Fatalf("markets = %v, want all %v", client.markets, allMarkets)
+	}
+	for i, market := range allMarkets {
+		if client.markets[i] != market {
+			t.Fatalf("markets = %v, want %v", client.markets, allMarkets)
+		}
+	}
+	// whole-market symbol query covers every default market
+	fake := newFakeSDK()
+	multi := newTestClient(t, FutuConfig{}, fake)
+	defer multi.Stop()
+	if _, err := multi.Symbols(); err != nil {
+		t.Fatalf("symbols: %v", err)
+	}
+	if fake.staticInfoCalls != len(allMarkets) {
+		t.Fatalf("static info calls = %d, want %d", fake.staticInfoCalls, len(allMarkets))
+	}
+}
+
 func TestSymbolsFromConfigAndPlates(t *testing.T) {
 	fake := newFakeSDK()
 	fake.staticInfos = []*qotcommon.SecurityStaticInfo{
 		staticInfo("HK", "00700", "Tencent", int32(adapt.SecurityType_Eqty), 100),
 		staticInfo("US", "AAPL", "Apple", int32(adapt.SecurityType_Eqty), 1),
 	}
-	client := newTestClient(t, FutuConfig{Market: "HK", Symbols: []string{"700"}, Plates: []string{"HK.LIST1059"}}, fake)
+	client := newTestClient(t, FutuConfig{Markets: []string{"HK"}, Symbols: []string{"HK.00700"}, Plates: []string{"HK.LIST1059"}}, fake)
 	defer client.Stop()
 
 	symbols, err := client.Symbols()
@@ -255,7 +311,7 @@ func TestSymbolsFromWholeMarket(t *testing.T) {
 	fake.staticInfos = []*qotcommon.SecurityStaticInfo{
 		staticInfo("HK", "09988", "Alibaba", int32(adapt.SecurityType_Eqty), 100),
 	}
-	client := newTestClient(t, FutuConfig{Market: "HK"}, fake)
+	client := newTestClient(t, FutuConfig{Markets: []string{"HK"}}, fake)
 	defer client.Stop()
 
 	symbols, err := client.Symbols()
@@ -264,6 +320,88 @@ func TestSymbolsFromWholeMarket(t *testing.T) {
 	}
 	if len(symbols) != 1 || symbols[0].Symbol != "HK.09988" {
 		t.Fatalf("symbols = %+v", symbols)
+	}
+}
+
+func TestMultipleMarketsWholeMarketQuery(t *testing.T) {
+	fake := newFakeSDK()
+	fake.staticInfos = []*qotcommon.SecurityStaticInfo{
+		staticInfo("HK", "00700", "Tencent", int32(adapt.SecurityType_Eqty), 100),
+		staticInfo("US", "AAPL", "Apple", int32(adapt.SecurityType_Eqty), 1),
+	}
+	client := newTestClient(t, FutuConfig{Markets: []string{"HK", "US"}}, fake)
+	defer client.Stop()
+
+	symbols, err := client.Symbols()
+	if err != nil {
+		t.Fatalf("symbols: %v", err)
+	}
+	if fake.staticInfoCalls != 2 {
+		t.Fatalf("static info calls = %d, want 2", fake.staticInfoCalls)
+	}
+	if len(fake.staticInfoMarkets) != 2 ||
+		fake.staticInfoMarkets[0] != adapt.QotMarket_HK ||
+		fake.staticInfoMarkets[1] != adapt.QotMarket_US {
+		t.Fatalf("static info markets = %v", fake.staticInfoMarkets)
+	}
+	if len(symbols) != 2 {
+		t.Fatalf("symbols = %+v", symbols)
+	}
+	// symbols must carry a market prefix when multiple markets are used
+	if code, err := client.normalizeSymbol("00700"); err == nil {
+		t.Fatalf("normalize(00700) = %q, want error", code)
+	}
+	code, err := client.normalizeSymbol("HK.700")
+	if err != nil || code != "HK.00700" {
+		t.Fatalf("normalize(HK.700) = %q, %v; want HK.00700", code, err)
+	}
+}
+
+func TestMultipleMarketsTradeHeaders(t *testing.T) {
+	fake := newFakeSDK()
+	cfg := testConfig()
+	cfg.Markets = []string{"HK", "US"}
+	cfg.Symbols = []string{"HK.00700", "US.AAPL"}
+	fake.accList = []*trdcommon.TrdAcc{
+		{TrdEnv: proto.Int32(int32(trdcommon.TrdEnv_TrdEnv_Simulate)), AccID: proto.Uint64(cfg.AccID)},
+	}
+	fake.placeResult = &trdplaceorder.S2C{OrderID: proto.Uint64(7)}
+	client := newTestClient(t, cfg, fake)
+	defer client.Stop()
+
+	if _, err := client.ProcessOrder(TradeAction{Symbol: "HK.00700", Action: OpenLong | Limit, Amount: 100, Price: 300}); err != nil {
+		t.Fatalf("HK order: %v", err)
+	}
+	if _, err := client.ProcessOrder(TradeAction{Symbol: "US.AAPL", Action: OpenLong | Limit, Amount: 1, Price: 100}); err != nil {
+		t.Fatalf("US order: %v", err)
+	}
+	if len(fake.placeCalls) != 2 {
+		t.Fatalf("place calls = %+v", fake.placeCalls)
+	}
+	if fake.placeCalls[0].header.GetTrdMarket() != adapt.TrdMarket_HK {
+		t.Fatalf("HK header market = %d", fake.placeCalls[0].header.GetTrdMarket())
+	}
+	if fake.placeCalls[1].header.GetTrdMarket() != adapt.TrdMarket_US {
+		t.Fatalf("US header market = %d", fake.placeCalls[1].header.GetTrdMarket())
+	}
+	if len(fake.accPushCalls) != 1 {
+		t.Fatalf("acc push calls = %+v, want a single subscription", fake.accPushCalls)
+	}
+
+	fake.openOrders = []*trdcommon.Order{
+		order(21, "HK.00700", 1, 1, 300, 100, 0),
+		order(22, "US.AAPL", 1, 1, 100, 1, 0),
+	}
+	all, err := client.CancelAllOrders()
+	if err != nil {
+		t.Fatalf("cancel all: %v", err)
+	}
+	if len(all) != 2 || len(fake.modifyCalls) != 2 {
+		t.Fatalf("cancel all = %+v, modify calls = %+v", all, fake.modifyCalls)
+	}
+	if fake.modifyCalls[0].header.GetTrdMarket() != adapt.TrdMarket_HK ||
+		fake.modifyCalls[1].header.GetTrdMarket() != adapt.TrdMarket_US {
+		t.Fatalf("cancel headers = %+v", fake.modifyCalls)
 	}
 }
 
@@ -285,7 +423,7 @@ func TestGetKlineHistoryPagination(t *testing.T) {
 			},
 		},
 	}
-	client := newTestClient(t, FutuConfig{Market: "HK"}, fake)
+	client := newTestClient(t, FutuConfig{Markets: []string{"HK"}}, fake)
 	defer client.Stop()
 
 	data, err := client.GetKline("HK.00700", "1d", start, end)
@@ -316,10 +454,10 @@ func TestGetKlineFallsBackToGetKL(t *testing.T) {
 			klineWithTS(now.Unix(), 2, 3, 4, 5, 20),
 		},
 	}
-	client := newTestClient(t, FutuConfig{Market: "US"}, fake)
+	client := newTestClient(t, FutuConfig{Markets: []string{"US"}}, fake)
 	defer client.Stop()
 
-	data, err := client.GetKline("AAPL", "1m", start, now)
+	data, err := client.GetKline("US.AAPL", "1m", start, now)
 	if err != nil {
 		t.Fatalf("get kline: %v", err)
 	}
@@ -330,7 +468,7 @@ func TestGetKlineFallsBackToGetKL(t *testing.T) {
 
 func TestWatchCandleEmitsClosedBars(t *testing.T) {
 	fake := newFakeSDK()
-	client := newTestClient(t, FutuConfig{Market: "HK"}, fake)
+	client := newTestClient(t, FutuConfig{Markets: []string{"HK"}}, fake)
 	defer client.Stop()
 
 	var received []*Candle
@@ -387,7 +525,7 @@ func TestWatchDepthAndTicker(t *testing.T) {
 			},
 		},
 	}
-	client := newTestClient(t, FutuConfig{Market: "HK"}, fake)
+	client := newTestClient(t, FutuConfig{Markets: []string{"HK"}}, fake)
 	defer client.Stop()
 
 	var depths []*Depth
@@ -432,7 +570,7 @@ func TestProcessOrderLimitMarketStop(t *testing.T) {
 	client := newTestClient(t, testConfig(), fake)
 	defer client.Stop()
 
-	limit, err := client.ProcessOrder(TradeAction{ID: "act-1", Symbol: "AAPL", Action: OpenLong | Limit, Amount: 10, Price: 99.5})
+	limit, err := client.ProcessOrder(TradeAction{ID: "act-1", Symbol: "US.AAPL", Action: OpenLong | Limit, Amount: 10, Price: 99.5})
 	if err != nil {
 		t.Fatalf("limit order: %v", err)
 	}
@@ -447,7 +585,7 @@ func TestProcessOrderLimitMarketStop(t *testing.T) {
 		t.Fatalf("limit call = %+v", call)
 	}
 
-	_, err = client.ProcessOrder(TradeAction{Symbol: "AAPL", Action: OpenLong | Market, Amount: 10})
+	_, err = client.ProcessOrder(TradeAction{Symbol: "US.AAPL", Action: OpenLong | Market, Amount: 10})
 	if err != nil {
 		t.Fatalf("market order: %v", err)
 	}
@@ -455,7 +593,7 @@ func TestProcessOrderLimitMarketStop(t *testing.T) {
 		t.Fatalf("market call = %+v", fake.placeCalls[1])
 	}
 
-	_, err = client.ProcessOrder(TradeAction{Symbol: "AAPL", Action: StopLong, Amount: 10, Price: 90})
+	_, err = client.ProcessOrder(TradeAction{Symbol: "US.AAPL", Action: StopLong, Amount: 10, Price: 90})
 	if err != nil {
 		t.Fatalf("stop order: %v", err)
 	}
@@ -463,7 +601,7 @@ func TestProcessOrderLimitMarketStop(t *testing.T) {
 		t.Fatalf("stop call = %+v", fake.placeCalls[2])
 	}
 
-	_, err = client.ProcessOrder(TradeAction{Symbol: "AAPL", Action: OpenShort | Limit, Amount: 5, Price: 100})
+	_, err = client.ProcessOrder(TradeAction{Symbol: "US.AAPL", Action: OpenShort | Limit, Amount: 5, Price: 100})
 	if err != nil {
 		t.Fatalf("short order: %v", err)
 	}
@@ -491,7 +629,7 @@ func TestCancelOrderAndCancelAll(t *testing.T) {
 	client := newTestClient(t, cfg, fake)
 	defer client.Stop()
 
-	canceled, err := client.CancelOrder(&Order{OrderID: "11"})
+	canceled, err := client.CancelOrder(&Order{OrderID: "11", Symbol: "US.AAPL"})
 	if err != nil {
 		t.Fatalf("cancel order: %v", err)
 	}
@@ -580,14 +718,14 @@ func TestStartUnlocksTrade(t *testing.T) {
 }
 
 func TestNormalizeSymbol(t *testing.T) {
-	client := &Client{cfg: FutuConfig{Market: "HK"}}
+	client := &Client{cfg: FutuConfig{Markets: []string{"HK"}}, markets: []string{"HK"}}
 	cases := []struct {
 		in   string
 		want string
 		err  bool
 	}{
-		{"700", "HK.00700", false},
-		{"00700", "HK.00700", false},
+		{"HK.700", "HK.00700", false},
+		{"00700", "", true},
 		{"HK.00700", "HK.00700", false},
 		{"US.AAPL", "US.AAPL", false},
 		{"EU.SAP", "", true},

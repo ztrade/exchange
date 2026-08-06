@@ -102,8 +102,8 @@ exchanges:
     type: futu
     addr: 127.0.0.1:11111   # FutuOpenD 地址，默认 :11111
     trd_env: simulate       # real 或 simulate，留空则只使用行情
-    market: US              # HK / US / SH / SZ / SG / JP
-    acc_id: 1619199         # 业务账号，留空则按 market 自动选择
+    # markets: [HK, US]     # 可选：限制使用的市场；留空则使用全部市场
+    acc_id: 1619199         # 业务账号，留空则按交易市场的权限自动选择
     unlock_trade: true      # 交易前是否解锁
     pwd_md5: md5-of-trade-password
     security_firm: 0        # 券商类型：0 未知 / 1 富途证券(香港) / 2 富途(美国)
@@ -117,11 +117,20 @@ exchanges:
     kline_limit: 1000
 ```
 
-Symbols use the `MARKET.CODE` format (e.g. `HK.00700`, `US.AAPL`). A symbol
-without a market prefix is normalized with the configured `market`, and HK
-codes are zero padded to five digits. `Symbols()` is populated from
-`symbols`, or from `plates`, or from the whole configured `market` when both
-lists are empty.
+All supported markets (HK / US / SH / SZ / SG / JP) are enabled by default;
+the optional `markets` list restricts the adapter to a subset. Symbols use
+the `MARKET.CODE` format (e.g. `HK.00700`, `US.AAPL`) and must carry a
+market prefix, since there is no default market anymore. HK codes are zero
+padded to five digits (`HK.700` → `HK.00700`). `Symbols()` is populated from
+`symbols`, or from `plates`, or from the whole markets when both lists are
+empty.
+
+Trading is resolved per symbol market: each order/cancel uses the account and
+trade header of the symbol's own market (`HK.00700` trades on the HK market,
+`US.AAPL` on the US market). Trade headers are resolved lazily per market, so
+an account is only needed for the markets that are actually traded; markets
+without a usable account are skipped. When `acc_id` is set it is used for
+every market it has permission for.
 
 Historical k-lines use the online history K-line API with pagination and fall
 back to the recent-window K-line API for recent ranges. `Watch` subscriptions
@@ -157,7 +166,7 @@ Account balance/position test:
 
 ```bash
 FUTU_INTEGRATION=1 FUTU_ENABLE_TRADE_TESTS=1 \
-FUTU_TRD_ENV=simulate FUTU_MARKET=US FUTU_ACC_ID=1619199 \
+FUTU_TRD_ENV=simulate FUTU_ACC_ID=1619199 \
 go test -tags=integration -run TestFutuIntegrationAccount -v ./futu
 ```
 
@@ -166,15 +175,15 @@ cancel it, so it will not fill. Simulation accounts are recommended:
 
 ```bash
 FUTU_INTEGRATION=1 FUTU_ENABLE_TRADE_TESTS=1 FUTU_ENABLE_ORDER_TESTS=1 \
-FUTU_TRD_ENV=simulate FUTU_MARKET=US FUTU_SYMBOL=US.AAPL FUTU_ORDER_AMOUNT=1 \
+FUTU_TRD_ENV=simulate FUTU_SYMBOL=US.AAPL FUTU_ORDER_AMOUNT=1 \
 go test -tags=integration -run TestFutuIntegrationOrderLifecycle -v ./futu
 ```
 
 `TestFutuIntegrationCancelAllOrders` cancels every active order of the
 account and additionally requires `FUTU_ENABLE_CANCEL_ALL_TEST=YES_I_UNDERSTAND`.
 
-Useful overrides include `FUTU_ADDR`, `FUTU_SYMBOLS`, `FUTU_PLATES`,
-`FUTU_PWD_MD5`, `FUTU_SECURITY_FIRM`, `FUTU_UNLOCK_TRADE`,
+Useful overrides include `FUTU_ADDR`, `FUTU_SYMBOL`, `FUTU_SYMBOLS`,
+`FUTU_PLATES`, `FUTU_PWD_MD5`, `FUTU_SECURITY_FIRM`, `FUTU_UNLOCK_TRADE`,
 `FUTU_ORDER_PRICE_FACTOR`, `FUTU_TIMEOUT`, `FUTU_WATCH_TIMEOUT`,
 `FUTU_ACCOUNT_TIMEOUT`, `FUTU_ORDER_EVENT_TIMEOUT`, and
 `FUTU_CANDLE_WATCH_TIMEOUT`.
